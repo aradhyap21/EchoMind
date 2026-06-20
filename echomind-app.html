@@ -1,0 +1,1767 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>EchoMind — Application</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Space+Grotesk:wght@300;400;500;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --black:          #080706;
+  --concrete-dark:  #111110;
+  --concrete-mid:   #1C1B19;
+  --concrete-light: #2D2B27;
+  --gold:           #C8893C;
+  --amber:          #E8A030;
+  --amber-glow:     rgba(232,160,48,0.1);
+  --amber-line:     rgba(232,160,48,0.5);
+  --cream:          #EDE5D0;
+  --cream-dim:      #8A8278;
+  --teal:           #00BFA0;
+  --teal-dim:       rgba(0,191,160,0.15);
+  --signal-red:     #D94040;
+  --border:         rgba(255,255,255,0.06);
+  --border-warm:    rgba(232,160,48,0.2);
+  --border-teal:    rgba(0,191,160,0.25);
+  --joy:            #E8A030;
+  --sadness:        #6B9FFF;
+  --anger:          #D94040;
+  --fear:           #A78BFA;
+  --surprise:       #00BFA0;
+  --disgust:        #86EFAC;
+  --neutral:        #6B6560;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body {
+  height: 100%;
+  overflow: hidden;
+  background: var(--black);
+  cursor: none;
+  font-family: 'Space Grotesk', sans-serif;
+  color: var(--cream);
+}
+
+::selection { background: var(--amber); color: var(--black); }
+
+::-webkit-scrollbar { width: 2px; height: 2px; }
+::-webkit-scrollbar-track { background: var(--concrete-dark); }
+::-webkit-scrollbar-thumb { background: var(--amber); }
+
+/* CURSOR */
+#cursor-dot {
+  position: fixed;
+  width: 6px; height: 6px;
+  background: var(--amber);
+  border-radius: 50%;
+  pointer-events: none;
+  z-index: 10001;
+  top: 0; left: 0;
+  margin-top: -3px;
+  margin-left: -3px;
+  will-change: transform;
+}
+#cursor-follower {
+  position: fixed;
+  width: 28px; height: 28px;
+  border: 1px solid var(--amber-line);
+  border-radius: 50%;
+  pointer-events: none;
+  z-index: 10000;
+  top: 0; left: 0;
+  margin-top: -14px;
+  margin-left: -14px;
+  will-change: transform;
+}
+
+/* GRAIN */
+#grain {
+  position: fixed;
+  top:0; left:0;
+  width:100vw; height:100vh;
+  z-index: 9999;
+  pointer-events: none;
+  mix-blend-mode: overlay;
+  opacity: 0.035;
+}
+
+/* APP LAYOUT */
+#app {
+  display: grid;
+  grid-template-rows: 52px 1fr;
+  height: 100vh;
+  overflow: hidden;
+}
+
+/* HEADER */
+#header {
+  background: var(--concrete-dark);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 20px;
+  gap: 16px;
+  z-index: 10;
+}
+.hdr-logo {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 28px;
+  color: var(--amber);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.hdr-status {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  white-space: nowrap;
+}
+.hdr-dot {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--teal);
+  animation: blink 1.2s infinite;
+  flex-shrink: 0;
+}
+@keyframes blink { 0%,100%{background:var(--teal);}50%{background:transparent;} }
+.hdr-status-text {
+  font-family: 'Space Mono', monospace;
+  font-size: 11px;
+  color: var(--teal);
+  letter-spacing: 0.15em;
+}
+.hdr-stats {
+  font-family: 'Space Mono', monospace;
+  font-size: 11px;
+  color: var(--cream-dim);
+  display: flex;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+.hdr-stat-val { color: var(--cream); }
+#reset-btn {
+  font-family: 'Space Mono', monospace;
+  font-size: 11px;
+  color: var(--signal-red);
+  letter-spacing: 0.1em;
+  background: none;
+  border: none;
+  cursor: none;
+  white-space: nowrap;
+  padding: 4px 0;
+  transition: opacity 0.2s;
+  flex-shrink: 0;
+}
+#reset-btn:hover { opacity: 0.6; }
+
+/* PANEL ROW */
+#panel-row {
+  display: grid;
+  grid-template-columns: 38fr 36fr 26fr;
+  height: 100%;
+  overflow: hidden;
+  border-top: 1px solid var(--border);
+}
+.panel {
+  height: 100%;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+.panel + .panel { border-left: 1px solid var(--border); }
+
+/* ZONE A */
+#zone-a { background: var(--concrete-dark); }
+
+/* Collapsible sub-panels */
+.sub-panel { border-bottom: 1px solid var(--border); }
+.sub-header {
+  height: 44px;
+  display: flex;
+  align-items: center;
+  padding: 0 16px;
+  gap: 10px;
+  border-bottom: 1px solid var(--border);
+  cursor: none;
+  user-select: none;
+}
+.sub-header:hover { background: rgba(255,255,255,0.02); }
+.sub-signal {
+  font-family: 'Space Mono', monospace;
+  font-size: 11px;
+  color: var(--cream-dim);
+  flex: 1;
+  letter-spacing: 0.1em;
+}
+.sub-chip {
+  font-family: 'Space Mono', monospace;
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  padding: 2px 6px;
+  border: 1px solid currentColor;
+}
+.chip-ready  { color: var(--cream-dim); }
+.chip-ok     { color: var(--teal); }
+.chip-warn   { color: var(--amber); }
+.chip-err    { color: var(--signal-red); }
+.chip-record { color: var(--signal-red); animation: blink 0.8s infinite; }
+.sub-arrow {
+  font-family: 'Space Mono', monospace;
+  font-size: 13px;
+  color: var(--concrete-text, #4A4844);
+  transition: transform 0.25s;
+  flex-shrink: 0;
+}
+.sub-arrow.open { transform: rotate(90deg); }
+.sub-body {
+  overflow: hidden;
+  padding: 16px;
+}
+
+/* Textarea */
+.txt-wrap { position: relative; }
+#text-input {
+  width: 100%;
+  min-height: 120px;
+  resize: none;
+  background: var(--concrete-mid);
+  border: 1px solid var(--border);
+  color: var(--cream);
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 15px;
+  padding: 12px;
+  outline: none;
+  transition: border-color 0.2s;
+  display: block;
+}
+#text-input:focus { border-color: var(--border-warm); }
+#text-input::placeholder { color: var(--concrete-light); }
+.txt-counter {
+  position: absolute;
+  bottom: 6px; right: 8px;
+  font-family: 'Space Mono', monospace;
+  font-size: 10px;
+  color: var(--concrete-light);
+}
+
+/* Weight row */
+.weight-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 12px;
+}
+.weight-label {
+  font-family: 'Space Mono', monospace;
+  font-size: 11px;
+  color: var(--cream-dim);
+  white-space: nowrap;
+  width: 90px;
+  flex-shrink: 0;
+}
+.weight-val {
+  font-family: 'Space Mono', monospace;
+  font-size: 11px;
+  color: var(--amber);
+  white-space: nowrap;
+  width: 36px;
+  text-align: right;
+  flex-shrink: 0;
+}
+input[type=range] {
+  -webkit-appearance: none;
+  flex: 1;
+  height: 2px;
+  background: var(--concrete-light);
+  outline: none;
+  cursor: none;
+}
+input[type=range]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 12px; height: 12px;
+  border-radius: 50%;
+  background: var(--amber);
+  cursor: none;
+}
+input[type=range]::-moz-range-thumb {
+  width: 12px; height: 12px;
+  border-radius: 50%;
+  background: var(--amber);
+  border: none;
+  cursor: none;
+}
+
+/* Buttons */
+.btn-primary {
+  width: 100%;
+  height: 44px;
+  background: var(--amber);
+  color: var(--black);
+  font-family: 'Space Mono', monospace;
+  font-weight: 700;
+  font-size: 12px;
+  letter-spacing: 0.15em;
+  border: none;
+  cursor: none;
+  margin-top: 16px;
+  display: block;
+  transition: background 0.15s;
+}
+.btn-primary:hover { background: var(--gold); }
+
+.btn-outline {
+  height: 36px;
+  background: transparent;
+  font-family: 'Space Mono', monospace;
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  cursor: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.btn-teal  { border: 1px solid var(--border-teal); color: var(--teal); }
+.btn-ghost { border: 1px solid var(--border);      color: var(--cream-dim); }
+.btn-ghost.disabled { opacity: 0.3; pointer-events: none; }
+
+.btn-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 12px; }
+
+.keyword-hints {
+  margin-top: 10px;
+  font-family: 'Space Mono', monospace;
+  font-size: 10px;
+  color: var(--concrete-light, #4A4844);
+  letter-spacing: 0.05em;
+}
+
+/* Camera */
+.cam-container {
+  position: relative;
+  aspect-ratio: 4/3;
+  background: var(--concrete-mid);
+  border: 1px solid var(--border);
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.cam-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+}
+.cam-face-box {
+  width: 60%; height: 70%;
+  border: 1px dashed var(--border);
+}
+.cam-label {
+  font-family: 'Space Mono', monospace;
+  font-size: 11px;
+  color: var(--concrete-light);
+  letter-spacing: 0.1em;
+}
+#cam-video {
+  position: absolute;
+  inset: 0;
+  width: 100%; height: 100%;
+  object-fit: cover;
+  transform: scaleX(-1);
+  display: none;
+}
+#cam-bbox {
+  position: absolute;
+  width: 60%; height: 70%;
+  top: 50%; left: 50%;
+  transform: translate(-50%,-50%);
+  border: 1px dashed var(--amber-line);
+  display: none;
+  pointer-events: none;
+}
+
+/* Waveform */
+#waveform-canvas {
+  width: 100%;
+  height: 64px;
+  background: var(--concrete-mid);
+  border: 1px solid var(--border);
+  display: block;
+}
+
+/* Record button */
+#record-btn {
+  width: 100%;
+  height: 52px;
+  background: var(--concrete-mid);
+  border: 1px solid var(--border);
+  color: var(--cream-dim);
+  font-family: 'Space Mono', monospace;
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  cursor: none;
+  margin-top: 12px;
+  position: relative;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+#record-btn.recording {
+  background: rgba(217,64,64,0.15);
+  border-color: var(--signal-red);
+  color: var(--signal-red);
+  animation: pulse-border 1.2s infinite;
+}
+@keyframes pulse-border {
+  0%,100%{box-shadow:0 0 0 0 rgba(217,64,64,0.4);}
+  50%{box-shadow:0 0 0 6px rgba(217,64,64,0);}
+}
+
+/* Divider OR row */
+.or-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 12px 0;
+}
+.or-line { flex: 1; height: 1px; background: var(--border); }
+.or-text {
+  font-family: 'Space Mono', monospace;
+  font-size: 10px;
+  color: var(--concrete-text, #4A4844);
+  white-space: nowrap;
+}
+
+.upload-btn {
+  width: 100%;
+  height: 36px;
+  border: 1px dashed var(--border);
+  color: var(--cream-dim);
+  background: transparent;
+  font-family: 'Space Mono', monospace;
+  font-size: 11px;
+  cursor: none;
+  display: flex; align-items: center; justify-content: center;
+}
+.upload-filename {
+  font-family: 'Space Mono', monospace;
+  font-size: 10px;
+  color: var(--teal);
+  margin-top: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Shortcuts */
+.shortcuts {
+  padding: 10px 16px;
+  font-family: 'Space Mono', monospace;
+  font-size: 9px;
+  color: var(--concrete-light);
+  letter-spacing: 0.1em;
+  border-top: 1px solid var(--border);
+}
+</style>
+
+<style>
+/* ZONE B */
+#zone-b { background: var(--black); display: flex; flex-direction: column; }
+
+/* Dominant display */
+#dominant-display {
+  min-height: 200px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 20px 16px 16px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.dominant-label {
+  font-family: 'Space Mono', monospace;
+  font-size: 11px;
+  color: var(--concrete-text, #4A4844);
+  letter-spacing: 0.2em;
+  margin-bottom: 10px;
+}
+#dominant-name {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: clamp(64px, 8vw, 100px);
+  color: var(--neutral);
+  line-height: 1;
+  text-align: center;
+}
+.dominant-bar-wrap {
+  width: 100%;
+  height: 4px;
+  background: var(--concrete-light);
+  margin-top: 12px;
+  position: relative;
+  overflow: hidden;
+}
+#dominant-bar-fill {
+  height: 100%;
+  width: 100%;
+  background: var(--neutral);
+  position: absolute;
+  left: 0; top: 0;
+}
+.dominant-meta {
+  display: flex;
+  justify-content: space-between;
+  width: 100%;
+  margin-top: 8px;
+}
+.dominant-meta-item {
+  font-family: 'Space Mono', monospace;
+  font-size: 10px;
+  color: var(--concrete-text, #4A4844);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.dominant-meta-item span:last-child {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 32px;
+  line-height: 1;
+}
+#dominant-confidence { color: var(--neutral); }
+
+/* Radar chart */
+#radar-wrap {
+  flex: 1;
+  min-height: 260px;
+  padding: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+}
+.radar-demo-tag {
+  position: absolute;
+  bottom: 8px; right: 12px;
+  font-family: 'Space Mono', monospace;
+  font-size: 9px;
+  color: var(--concrete-text, #4A4844);
+  font-style: italic;
+  letter-spacing: 0.1em;
+}
+
+/* Fusion weights */
+#fusion-weights {
+  border-top: 1px solid var(--border);
+  padding: 14px 16px;
+  flex-shrink: 0;
+}
+.fusion-title {
+  font-family: 'Space Mono', monospace;
+  font-size: 11px;
+  color: var(--concrete-text, #4A4844);
+  letter-spacing: 0.2em;
+  margin-bottom: 12px;
+}
+.fw-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.fw-label {
+  font-family: 'Space Mono', monospace;
+  font-size: 11px;
+  color: var(--cream-dim);
+  width: 50px;
+  flex-shrink: 0;
+}
+.fw-track {
+  flex: 1;
+  height: 4px;
+  background: var(--concrete-light);
+  position: relative;
+}
+.fw-fill {
+  position: absolute;
+  left: 0; top: 0;
+  height: 100%;
+  transition: width 0.3s;
+}
+.fw-pct {
+  font-family: 'Space Mono', monospace;
+  font-size: 11px;
+  width: 36px;
+  text-align: right;
+  flex-shrink: 0;
+}
+.fw-total {
+  font-family: 'Space Mono', monospace;
+  font-size: 11px;
+  color: var(--cream-dim);
+  margin-top: 8px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+#total-warn {
+  font-size: 10px;
+  color: var(--amber);
+  display: none;
+}
+
+.btn-fuse {
+  width: 100%;
+  height: 40px;
+  background: var(--teal-dim);
+  border: 1px solid var(--border-teal);
+  color: var(--teal);
+  font-family: 'Space Mono', monospace;
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  cursor: none;
+  margin-top: 10px;
+  display: flex; align-items: center; justify-content: center;
+}
+.btn-fuse:hover { background: rgba(0,191,160,0.2); }
+
+#latency-display {
+  font-family: 'Space Mono', monospace;
+  font-size: 10px;
+  color: var(--concrete-text, #4A4844);
+  margin-top: 8px;
+  opacity: 0;
+  min-height: 14px;
+  letter-spacing: 0.05em;
+}
+
+/* ZONE C */
+#zone-c {
+  background: var(--concrete-dark);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+.zone-c-section {
+  border-bottom: 1px solid var(--border);
+  padding: 14px 14px;
+  flex-shrink: 0;
+}
+.zc-title {
+  font-family: 'Space Mono', monospace;
+  font-size: 11px;
+  color: var(--concrete-text, #4A4844);
+  letter-spacing: 0.15em;
+  margin-bottom: 12px;
+}
+
+/* Confidence bars */
+.conf-row {
+  display: flex;
+  align-items: center;
+  margin-bottom: 7px;
+  gap: 0;
+}
+.conf-emotion {
+  font-family: 'Space Mono', monospace;
+  font-size: 11px;
+  color: var(--cream-dim);
+  width: 68px;
+  flex-shrink: 0;
+}
+.conf-track {
+  flex: 1;
+  height: 6px;
+  background: var(--concrete-light);
+  margin: 0 8px;
+  position: relative;
+}
+.conf-fill {
+  position: absolute;
+  left: 0; top: 0;
+  height: 100%;
+  width: 100%;
+}
+.conf-pct {
+  font-family: 'Space Mono', monospace;
+  font-size: 11px;
+  color: var(--cream-dim);
+  width: 34px;
+  text-align: right;
+  flex-shrink: 0;
+}
+
+/* Timeline */
+#timeline-wrap {
+  height: 140px;
+  position: relative;
+}
+
+/* Modality split */
+.mod-split-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 8px;
+}
+.mod-split-col { }
+.msc-label {
+  font-family: 'Space Mono', monospace;
+  font-size: 10px;
+  color: var(--cream-dim);
+  display: block;
+  margin-bottom: 4px;
+  letter-spacing: 0.1em;
+}
+.msc-dominant {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 24px;
+  line-height: 1;
+  display: block;
+  margin-bottom: 6px;
+}
+.msc-mini {
+  font-family: 'Space Mono', monospace;
+  font-size: 9px;
+  color: var(--cream-dim);
+  line-height: 1.8;
+}
+.msc-mini span { color: var(--concrete-text, #4A4844); margin-right: 4px; }
+
+/* Session log */
+#session-log {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 120px;
+}
+#session-log-list {
+  padding: 0;
+  list-style: none;
+}
+.log-entry {
+  display: grid;
+  grid-template-columns: 42px 1fr 48px 52px;
+  gap: 4px;
+  padding: 6px 14px;
+  border-bottom: 1px solid var(--border);
+  font-family: 'Space Mono', monospace;
+  font-size: 10px;
+  align-items: center;
+}
+.log-time  { color: var(--concrete-text, #4A4844); }
+.log-dom   { font-weight: 700; letter-spacing: 0.05em; }
+.log-conf  { color: var(--cream-dim); text-align: right; }
+.log-src   { color: var(--concrete-text, #4A4844); text-align: right; letter-spacing: 0.05em; font-size: 9px; }
+.log-hdr   { color: var(--concrete-text, #4A4844); font-size: 9px; letter-spacing: 0.1em; }
+</style>
+
+</head>
+<body>
+
+<canvas id="grain"></canvas>
+<div id="cursor-dot"></div>
+<div id="cursor-follower"></div>
+
+<div id="app">
+
+  <!-- HEADER -->
+  <header id="header">
+    <span class="hdr-logo">ECHOMIND</span>
+    <div class="hdr-status">
+      <div class="hdr-dot"></div>
+      <span class="hdr-status-text">DEMO MODE ACTIVE</span>
+    </div>
+    <div class="hdr-stats">
+      <span>analyses run: <span class="hdr-stat-val" id="hdr-count">000</span></span>
+      <span>dominant: <span class="hdr-stat-val" id="hdr-dominant">--</span></span>
+      <span id="session-timer">session: 00:00</span>
+    </div>
+    <button id="reset-btn">RESET SESSION</button>
+  </header>
+
+  <!-- PANEL ROW -->
+  <div id="panel-row">
+
+    <!-- ZONE A: INPUT -->
+    <div class="panel" id="zone-a">
+
+      <!-- SUB-PANEL 1: TEXT -->
+      <div class="sub-panel" id="sp-text">
+        <div class="sub-header" id="sp-text-hdr">
+          <span class="sub-signal">SIGNAL 01 / TEXT</span>
+          <span class="sub-chip chip-ready" id="chip-text">READY</span>
+          <span class="sub-arrow open" id="arrow-text">&#8250;</span>
+        </div>
+        <div class="sub-body" id="body-text">
+          <div class="txt-wrap">
+            <textarea id="text-input" placeholder="type something. anything." maxlength="500"></textarea>
+            <span class="txt-counter" id="txt-counter">0 / 500</span>
+          </div>
+          <div class="weight-row">
+            <span class="weight-label">TEXT WEIGHT</span>
+            <input type="range" id="slider-text" min="0.1" max="0.9" step="0.05" value="0.40">
+            <span class="weight-val" id="val-text">0.40</span>
+          </div>
+          <button class="btn-primary" id="analyze-text-btn">ANALYZE TEXT</button>
+          <div class="keyword-hints" id="keyword-hints">DETECTED SIGNALS:&nbsp;&nbsp;--</div>
+        </div>
+      </div>
+
+      <!-- SUB-PANEL 2: WEBCAM -->
+      <div class="sub-panel" id="sp-cam">
+        <div class="sub-header" id="sp-cam-hdr">
+          <span class="sub-signal">SIGNAL 02 / WEBCAM</span>
+          <span class="sub-chip chip-err" id="chip-cam">NO FEED</span>
+          <span class="sub-arrow open" id="arrow-cam">&#8250;</span>
+        </div>
+        <div class="sub-body" id="body-cam">
+          <div class="cam-container" id="cam-container">
+            <div class="cam-placeholder" id="cam-placeholder">
+              <div class="cam-face-box"></div>
+              <span class="cam-label">CAMERA NOT ACTIVE</span>
+            </div>
+            <video id="cam-video" autoplay muted playsinline></video>
+            <div id="cam-bbox"></div>
+          </div>
+          <div class="btn-pair">
+            <button class="btn-outline btn-teal" id="cam-toggle-btn">START CAMERA</button>
+            <button class="btn-outline btn-ghost disabled" id="cam-snap-btn">SNAPSHOT + ANALYZE</button>
+          </div>
+          <div class="weight-row">
+            <span class="weight-label">FACE WEIGHT</span>
+            <input type="range" id="slider-face" min="0.1" max="0.9" step="0.05" value="0.35">
+            <span class="weight-val" id="val-face">0.35</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- SUB-PANEL 3: AUDIO -->
+      <div class="sub-panel" id="sp-audio">
+        <div class="sub-header" id="sp-audio-hdr">
+          <span class="sub-signal">SIGNAL 03 / AUDIO</span>
+          <span class="sub-chip chip-ready" id="chip-audio">IDLE</span>
+          <span class="sub-arrow open" id="arrow-audio">&#8250;</span>
+        </div>
+        <div class="sub-body" id="body-audio">
+          <canvas id="waveform-canvas"></canvas>
+          <button id="record-btn">HOLD TO RECORD</button>
+          <div class="or-row">
+            <div class="or-line"></div>
+            <span class="or-text">— OR —</span>
+            <div class="or-line"></div>
+          </div>
+          <input type="file" accept="audio/*" id="audio-file-input" style="display:none">
+          <button class="upload-btn" id="upload-audio-btn">UPLOAD AUDIO FILE</button>
+          <div class="upload-filename" id="upload-filename" style="display:none"></div>
+          <div class="weight-row">
+            <span class="weight-label">AUDIO WEIGHT</span>
+            <input type="range" id="slider-audio" min="0.1" max="0.9" step="0.05" value="0.25">
+            <span class="weight-val" id="val-audio">0.25</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Keyboard shortcuts -->
+      <div class="shortcuts">
+        ENTER analyze &nbsp;|&nbsp; ESC blur &nbsp;|&nbsp; R reset &nbsp;|&nbsp; SPACE camera
+      </div>
+
+    </div><!-- /zone-a -->
+
+    <!-- ZONE B: PRIMARY OUTPUT -->
+    <div class="panel" id="zone-b">
+
+      <!-- Dominant display -->
+      <div id="dominant-display">
+        <span class="dominant-label">DOMINANT SIGNAL</span>
+        <div id="dominant-name">NEUTRAL</div>
+        <div class="dominant-bar-wrap">
+          <div id="dominant-bar-fill"></div>
+        </div>
+        <div class="dominant-meta">
+          <div class="dominant-meta-item">
+            <span style="font-family:'Space Mono',monospace;font-size:10px;color:var(--concrete-text);">CONFIDENCE</span>
+            <span id="dominant-confidence" style="font-family:'Bebas Neue',sans-serif;font-size:36px;line-height:1;">100%</span>
+          </div>
+          <div class="dominant-meta-item" style="text-align:right;">
+            <span style="font-family:'Space Mono',monospace;font-size:10px;color:var(--concrete-text);">FUSION</span>
+            <span style="font-family:'Space Mono',monospace;font-size:11px;color:var(--cream-dim);">weighted / 3 signals</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Radar -->
+      <div id="radar-wrap">
+        <canvas id="radar-canvas"></canvas>
+        <span class="radar-demo-tag">DEMO MODE</span>
+      </div>
+
+      <!-- Fusion weights -->
+      <div id="fusion-weights">
+        <div class="fusion-title">FUSION WEIGHTS</div>
+        <div class="fw-row">
+          <span class="fw-label">TEXT</span>
+          <div class="fw-track"><div class="fw-fill" id="fw-text" style="background:var(--amber);width:40%"></div></div>
+          <span class="fw-pct" id="fwp-text" style="color:var(--amber)">40%</span>
+        </div>
+        <div class="fw-row">
+          <span class="fw-label">FACE</span>
+          <div class="fw-track"><div class="fw-fill" id="fw-face" style="background:var(--teal);width:35%"></div></div>
+          <span class="fw-pct" id="fwp-face" style="color:var(--teal)">35%</span>
+        </div>
+        <div class="fw-row">
+          <span class="fw-label">AUDIO</span>
+          <div class="fw-track"><div class="fw-fill" id="fw-audio" style="background:var(--cream-dim);width:25%"></div></div>
+          <span class="fw-pct" id="fwp-audio" style="color:var(--cream-dim)">25%</span>
+        </div>
+        <div class="fw-total">
+          <span>TOTAL &nbsp;<strong id="fw-total-val">100%</strong></span>
+          <span id="total-warn">AUTO-NORMALIZING</span>
+        </div>
+        <button class="btn-fuse" id="fuse-btn">FUSE + ANALYZE</button>
+        <div id="latency-display"></div>
+      </div>
+
+    </div><!-- /zone-b -->
+
+    <!-- ZONE C: SECONDARY OUTPUT -->
+    <div class="panel" id="zone-c">
+
+      <!-- C1: Confidence bars -->
+      <div class="zone-c-section">
+        <div class="zc-title">SIGNAL BREAKDOWN</div>
+        <div id="conf-bars">
+          <!-- injected by JS -->
+        </div>
+      </div>
+
+      <!-- C2: Timeline -->
+      <div class="zone-c-section">
+        <div class="zc-title">TIMELINE / LAST 20</div>
+        <div id="timeline-wrap">
+          <canvas id="timeline-canvas"></canvas>
+        </div>
+      </div>
+
+      <!-- C3: Modality split -->
+      <div class="zone-c-section">
+        <div class="zc-title">MODALITY SPLIT</div>
+        <div class="mod-split-grid" id="mod-split"></div>
+      </div>
+
+      <!-- C4: Session log -->
+      <div class="zone-c-section" style="flex:1;display:flex;flex-direction:column;overflow:hidden;">
+        <div class="zc-title">SESSION LOG</div>
+        <div class="log-entry" style="margin-bottom:4px;">
+          <span class="log-hdr">TIME</span>
+          <span class="log-hdr">DOMINANT</span>
+          <span class="log-hdr" style="text-align:right;">CONF</span>
+          <span class="log-hdr" style="text-align:right;">SRC</span>
+        </div>
+        <div id="session-log">
+          <ul id="session-log-list"></ul>
+        </div>
+      </div>
+
+    </div><!-- /zone-c -->
+
+  </div><!-- /panel-row -->
+</div><!-- /app -->
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@studio-freight/lenis@1.0.42/dist/lenis.min.js"></script>
+<script>
+// ─────────────────────────────────────────────
+// MOCK MODEL LAYER
+// ─────────────────────────────────────────────
+const EMOTIONS = ['joy','sadness','anger','fear','surprise','disgust','neutral'];
+const EMOTION_COLORS = {
+  joy:'#E8A030', sadness:'#6B9FFF', anger:'#D94040',
+  fear:'#A78BFA', surprise:'#00BFA0', disgust:'#86EFAC', neutral:'#6B6560'
+};
+const KEYWORD_MAP = {
+  joy:      ['happy','great','love','amazing','excited','wonderful','glad','fun','good','yay'],
+  sadness:  ['sad','miss','cry','alone','lost','hurt','tired','depressed','sorry','grief'],
+  anger:    ['angry','hate','furious','annoyed','frustrated','rage','irritated','mad'],
+  fear:     ['scared','afraid','nervous','anxious','worried','panic','dread','terror'],
+  surprise: ['wow','unexpected','shocked','sudden','wait','really'],
+  disgust:  ['gross','disgusting','awful','horrible','nasty','terrible','repulsive'],
+};
+
+function dirichlet(alphas) {
+  const gamma = alphas.map(a => {
+    let sum = 0;
+    for (let i = 0; i < Math.ceil(a * 10); i++) sum -= Math.log(Math.random() || 1e-9);
+    return sum / (a * 10);
+  });
+  const total = gamma.reduce((a,b) => a + b, 0);
+  return gamma.map(v => v / total);
+}
+
+function predictText(text) {
+  const words = text.toLowerCase().split(/\s+/);
+  const alphas = [2,1,1,1,1,1,3];
+  EMOTIONS.forEach((emotion, i) => {
+    if (KEYWORD_MAP[emotion]) {
+      const matches = KEYWORD_MAP[emotion].filter(k => words.some(w => w.includes(k)));
+      if (matches.length > 0) alphas[i] += matches.length * 4;
+    }
+  });
+  const probs = dirichlet(alphas);
+  const obj = {};
+  EMOTIONS.forEach((e, i) => obj[e] = probs[i]);
+  const dominant = EMOTIONS[probs.indexOf(Math.max(...probs))];
+  return { emotions: obj, dominant, confidence: Math.max(...probs), latency_ms: 80 + Math.random() * 60 };
+}
+
+function predictFace() {
+  const t = Date.now() / 1000;
+  const base = EMOTIONS.map((_,i) => Math.abs(Math.sin(t * 0.3 + i * 1.1)));
+  const total = base.reduce((a,b) => a + b, 0);
+  const probs = base.map(v => v / total);
+  const obj = {};
+  EMOTIONS.forEach((e,i) => obj[e] = probs[i]);
+  const dominant = EMOTIONS[probs.indexOf(Math.max(...probs))];
+  return { emotions: obj, dominant, confidence: Math.max(...probs), latency_ms: 20 + Math.random() * 25 };
+}
+
+function predictAudio(hasInput = false) {
+  if (!hasInput) {
+    return { emotions:{joy:0,sadness:0,anger:0,fear:0,surprise:0,disgust:0,neutral:1},
+             dominant:'neutral', confidence:1.0, latency_ms:0 };
+  }
+  const probs = dirichlet([1.5,1,1,1,1,1,2]);
+  const obj = {};
+  EMOTIONS.forEach((e,i) => obj[e] = probs[i]);
+  const dominant = EMOTIONS[probs.indexOf(Math.max(...probs))];
+  return { emotions: obj, dominant, confidence: Math.max(...probs), latency_ms: 60 + Math.random() * 60 };
+}
+
+function fusePredictions(textPred, facePred, audioPred, weights = [0.4,0.35,0.25]) {
+  const total = weights.reduce((a,b) => a + b, 0);
+  const w = weights.map(v => v / total);
+  const fused = {};
+  EMOTIONS.forEach(e => {
+    fused[e] = textPred.emotions[e]*w[0] + facePred.emotions[e]*w[1] + audioPred.emotions[e]*w[2];
+  });
+  const values = EMOTIONS.map(e => fused[e]);
+  const dominant = EMOTIONS[values.indexOf(Math.max(...values))];
+  return { emotions: fused, dominant, confidence: Math.max(...values) };
+}
+
+function detectKeywords(text) {
+  const words = text.toLowerCase().split(/\s+/);
+  const found = [];
+  for (const [emotion, keywords] of Object.entries(KEYWORD_MAP)) {
+    if (keywords.some(k => words.some(w => w.includes(k)))) found.push(emotion);
+  }
+  return found.length > 0 ? found.join(' / ') : '--';
+}
+
+// ─────────────────────────────────────────────
+// STATE
+// ─────────────────────────────────────────────
+const state = {
+  sessionStart: Date.now(),
+  analysisCount: 0,
+  history: [],
+  lastText: null,
+  lastFace: null,
+  lastAudio: null,
+  lastFused: null,
+  cameraActive: false,
+  cameraInterval: null,
+  audioHasInput: false,
+  weights: { text: 0.40, face: 0.35, audio: 0.25 }
+};
+
+function runFusion(source = 'FUSED') {
+  const textPred  = state.lastText  || predictText('');
+  const facePred  = state.lastFace  || predictFace();
+  const audioPred = state.lastAudio || predictAudio(false);
+  const weights = [state.weights.text, state.weights.face, state.weights.audio];
+  const fused = fusePredictions(textPred, facePred, audioPred, weights);
+  state.lastFused = fused;
+  state.analysisCount++;
+
+  const elapsed = ((Date.now() - state.sessionStart) / 1000).toFixed(0);
+  const mm = String(Math.floor(elapsed / 60)).padStart(2,'0');
+  const ss = String(elapsed % 60).padStart(2,'0');
+  state.history.unshift({
+    time: `${mm}:${ss}`,
+    dominant: fused.dominant,
+    confidence: fused.confidence.toFixed(2),
+    source
+  });
+  if (state.history.length > 20) state.history.pop();
+  updateAllOutputs(fused, textPred, facePred, audioPred);
+}
+
+// ─────────────────────────────────────────────
+// CHART SETUP
+// ─────────────────────────────────────────────
+let radarChart, timelineChart;
+
+function initCharts() {
+  // Radar
+  const rCtx = document.getElementById('radar-canvas').getContext('2d');
+  radarChart = new Chart(rCtx, {
+    type: 'radar',
+    data: {
+      labels: ['JOY','SADNESS','ANGER','FEAR','SURPRISE','DISGUST','NEUTRAL'],
+      datasets: [{
+        label: 'FUSED',
+        data: [0,0,0,0,0,0,1],
+        backgroundColor: 'rgba(232,160,48,0.08)',
+        borderColor: 'rgba(232,160,48,0.8)',
+        borderWidth: 1.5,
+        pointBackgroundColor: 'rgba(232,160,48,0.9)',
+        pointRadius: 3,
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: { duration: 400, easing: 'easeOutQuart' },
+      scales: {
+        r: {
+          min: 0, max: 1,
+          backgroundColor: 'transparent',
+          grid: { color: 'rgba(255,255,255,0.04)' },
+          ticks: { display: false, stepSize: 0.25 },
+          pointLabels: {
+            color: '#8A8278',
+            font: { family: 'Space Mono', size: 10 },
+            padding: 8
+          }
+        }
+      },
+      plugins: { legend: { display: false } }
+    }
+  });
+
+  // Timeline
+  const tCtx = document.getElementById('timeline-canvas').getContext('2d');
+  const tlDatasets = EMOTIONS.map(e => ({
+    label: e, data: [],
+    borderColor: EMOTION_COLORS[e],
+    borderWidth: 1.5, tension: 0.4, pointRadius: 0, fill: false
+  }));
+  timelineChart = new Chart(tCtx, {
+    type: 'line',
+    data: { labels: [], datasets: tlDatasets },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      animation: { duration: 300 },
+      scales: {
+        x: { display: false },
+        y: { min: 0, max: 1, display: false }
+      },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          mode: 'index', intersect: false,
+          backgroundColor: '#1C1B19',
+          borderColor: 'rgba(255,255,255,0.06)', borderWidth: 1,
+          titleFont: { family: 'Space Mono', size: 10 },
+          bodyFont: { family: 'Space Mono', size: 10 },
+          titleColor: '#8A8278', bodyColor: '#EDE5D0'
+        }
+      }
+    }
+  });
+}
+
+// ─────────────────────────────────────────────
+// CONFIDENCE BARS INIT
+// ─────────────────────────────────────────────
+function initConfBars() {
+  const container = document.getElementById('conf-bars');
+  EMOTIONS.forEach(e => {
+    const row = document.createElement('div');
+    row.className = 'conf-row';
+    row.innerHTML = `
+      <span class="conf-emotion">${e.toUpperCase()}</span>
+      <div class="conf-track">
+        <div class="conf-fill" id="bar-fill-${e}" style="background:${EMOTION_COLORS[e]};width:${e==='neutral'?'100%':'0%'}"></div>
+      </div>
+      <span class="conf-pct" id="bar-pct-${e}">${e==='neutral'?'100':'0'}%</span>`;
+    container.appendChild(row);
+  });
+}
+
+// ─────────────────────────────────────────────
+// MODALITY SPLIT INIT
+// ─────────────────────────────────────────────
+function initModSplit() {
+  const container = document.getElementById('mod-split');
+  const neutralPred = { emotions:{joy:0,sadness:0,anger:0,fear:0,surprise:0,disgust:0,neutral:1}, dominant:'neutral' };
+  ['TEXT','FACE','AUDIO'].forEach((label, i) => {
+    const col = document.createElement('div');
+    col.className = 'mod-split-col';
+    col.id = `msc-${label.toLowerCase()}`;
+    col.innerHTML = `
+      <span class="msc-label">${label}</span>
+      <span class="msc-dominant" style="color:${EMOTION_COLORS['neutral']}">NEUTRAL</span>
+      <div class="msc-mini" id="msc-mini-${label.toLowerCase()}">
+        <div><span>neutral</span> 1.00</div>
+      </div>`;
+    container.appendChild(col);
+  });
+}
+
+// ─────────────────────────────────────────────
+// UPDATE FUNCTIONS
+// ─────────────────────────────────────────────
+function updateDominantDisplay(fused) {
+  const nameEl = document.getElementById('dominant-name');
+  const color = EMOTION_COLORS[fused.dominant];
+  gsap.to(nameEl, {
+    opacity: 0, y: 8, duration: 0.15,
+    onComplete: () => {
+      nameEl.textContent = fused.dominant.toUpperCase();
+      nameEl.style.color = color;
+      gsap.to(nameEl, { opacity: 1, y: 0, duration: 0.3, ease: 'expo.out' });
+    }
+  });
+  gsap.to('#dominant-bar-fill', {
+    width: `${(fused.confidence * 100).toFixed(1)}%`,
+    backgroundColor: color, duration: 0.5, ease: 'power2.out'
+  });
+  const confEl = document.getElementById('dominant-confidence');
+  confEl.textContent = `${(fused.confidence * 100).toFixed(0)}%`;
+  confEl.style.color = color;
+}
+
+function updateRadarChart(emotions) {
+  radarChart.data.datasets[0].data = EMOTIONS.map(e => emotions[e]);
+  radarChart.update('active');
+}
+
+function updateConfidenceBars(emotions) {
+  EMOTIONS.forEach(e => {
+    const fill = document.getElementById(`bar-fill-${e}`);
+    const pct  = document.getElementById(`bar-pct-${e}`);
+    const val  = emotions[e];
+    gsap.to(fill, { width:`${(val*100).toFixed(1)}%`, backgroundColor:EMOTION_COLORS[e], duration:0.5, ease:'power2.out' });
+    pct.textContent = `${(val*100).toFixed(0)}%`;
+  });
+}
+
+function updateTimeline(emotions) {
+  const idx = timelineChart.data.labels.length;
+  timelineChart.data.labels.push(idx === 0 ? 'now' : `-${idx}`);
+  if (timelineChart.data.labels.length > 20) {
+    timelineChart.data.labels.shift();
+    timelineChart.data.datasets.forEach(ds => ds.data.shift());
+  }
+  timelineChart.data.datasets.forEach(ds => {
+    ds.data.push(emotions[ds.label] || 0);
+  });
+  timelineChart.update('none');
+}
+
+function updateModalitySplit(textPred, facePred, audioPred) {
+  const preds = { text: textPred, face: facePred, audio: audioPred };
+  ['text','face','audio'].forEach(key => {
+    const pred = preds[key];
+    const col = document.getElementById(`msc-${key}`);
+    if (!col) return;
+    const domEl = col.querySelector('.msc-dominant');
+    domEl.textContent = pred.dominant.toUpperCase();
+    domEl.style.color = EMOTION_COLORS[pred.dominant];
+
+    const sorted = EMOTIONS.slice().sort((a,b) => pred.emotions[b] - pred.emotions[a]).slice(0,3);
+    const mini = document.getElementById(`msc-mini-${key}`);
+    mini.innerHTML = sorted.map(e =>
+      `<div><span style="color:${EMOTION_COLORS[e]}">${e}</span> ${pred.emotions[e].toFixed(2)}</div>`
+    ).join('');
+  });
+}
+
+function updateFusionWeightBars() {
+  const { text, face, audio } = state.weights;
+  const total = text + face + audio || 1;
+
+  document.getElementById('fw-text').style.width  = `${(text/total*100).toFixed(1)}%`;
+  document.getElementById('fw-face').style.width  = `${(face/total*100).toFixed(1)}%`;
+  document.getElementById('fw-audio').style.width = `${(audio/total*100).toFixed(1)}%`;
+  document.getElementById('fwp-text').textContent  = `${(text/total*100).toFixed(0)}%`;
+  document.getElementById('fwp-face').textContent  = `${(face/total*100).toFixed(0)}%`;
+  document.getElementById('fwp-audio').textContent = `${(audio/total*100).toFixed(0)}%`;
+
+  const totalPct = Math.round(text*100 + face*100 + audio*100);
+  document.getElementById('fw-total-val').textContent = `${totalPct}%`;
+  const warnEl = document.getElementById('total-warn');
+  warnEl.style.display = (Math.abs(totalPct - 100) > 2) ? 'block' : 'none';
+}
+
+function appendSessionLog(fused) {
+  const list = document.getElementById('session-log-list');
+  const entry = state.history[0];
+  const li = document.createElement('li');
+  li.className = 'log-entry';
+  li.style.opacity = '0';
+  li.style.transform = 'translateY(-12px)';
+  li.innerHTML = `
+    <span class="log-time">${entry.time}</span>
+    <span class="log-dom" style="color:${EMOTION_COLORS[entry.dominant]}">${entry.dominant.toUpperCase()}</span>
+    <span class="log-conf">${entry.confidence}</span>
+    <span class="log-src">${entry.source}</span>`;
+  list.insertBefore(li, list.firstChild);
+  gsap.to(li, { opacity: 1, y: 0, duration: 0.3, ease: 'power2.out' });
+  // Trim DOM
+  while (list.children.length > 20) list.removeChild(list.lastChild);
+}
+
+function updateHeaderStats() {
+  document.getElementById('hdr-count').textContent = String(state.analysisCount).padStart(3,'0');
+  const dom = state.lastFused ? state.lastFused.dominant : '--';
+  const hdrDom = document.getElementById('hdr-dominant');
+  hdrDom.textContent = dom === '--' ? '--' : dom.toUpperCase();
+  hdrDom.style.color = dom === '--' ? '' : EMOTION_COLORS[dom];
+}
+
+function updateLatency(textPred, facePred, audioPred) {
+  const el = document.getElementById('latency-display');
+  const tl = textPred ? textPred.latency_ms.toFixed(0)+'ms' : '--';
+  const fl = facePred ? facePred.latency_ms.toFixed(0)+'ms' : '--';
+  const al = audioPred ? audioPred.latency_ms.toFixed(0)+'ms' : '--';
+  el.textContent = `TEXT ${tl}  /  FACE ${fl}  /  AUDIO ${al}`;
+  gsap.fromTo(el, { opacity: 0 }, { opacity: 0.7, duration: 0.4 });
+}
+
+function updateAllOutputs(fused, textPred, facePred, audioPred) {
+  updateDominantDisplay(fused);
+  updateRadarChart(fused.emotions);
+  updateConfidenceBars(fused.emotions);
+  updateTimeline(fused.emotions);
+  updateModalitySplit(textPred, facePred, audioPred);
+  updateFusionWeightBars();
+  appendSessionLog(fused);
+  updateHeaderStats();
+  updateLatency(textPred, facePred, audioPred);
+}
+
+// ─────────────────────────────────────────────
+// RESET
+// ─────────────────────────────────────────────
+function resetSession() {
+  state.analysisCount = 0; state.history = [];
+  state.lastText = null; state.lastFace = null;
+  state.lastAudio = null; state.lastFused = null;
+  state.sessionStart = Date.now();
+  state.audioHasInput = false;
+
+  const neutral = {emotions:{joy:0,sadness:0,anger:0,fear:0,surprise:0,disgust:0,neutral:1},dominant:'neutral',confidence:1.0};
+  updateDominantDisplay(neutral);
+  updateRadarChart(neutral.emotions);
+  updateConfidenceBars(neutral.emotions);
+  timelineChart.data.labels = [];
+  timelineChart.data.datasets.forEach(ds => ds.data = []);
+  timelineChart.update('none');
+  document.getElementById('session-log-list').innerHTML = '';
+  updateHeaderStats();
+  updateFusionWeightBars();
+
+  const btn = document.getElementById('reset-btn');
+  const orig = btn.textContent;
+  btn.textContent = 'SESSION CLEARED';
+  btn.style.color = 'var(--teal)';
+  setTimeout(() => { btn.textContent = orig; btn.style.color = 'var(--signal-red)'; }, 1500);
+}
+
+// ─────────────────────────────────────────────
+// COLLAPSIBLE SUB-PANELS
+// ─────────────────────────────────────────────
+function initCollapsibles() {
+  [['sp-text-hdr','body-text','arrow-text'],
+   ['sp-cam-hdr','body-cam','arrow-cam'],
+   ['sp-audio-hdr','body-audio','arrow-audio']].forEach(([hdrId, bodyId, arrowId]) => {
+    const hdr   = document.getElementById(hdrId);
+    const body  = document.getElementById(bodyId);
+    const arrow = document.getElementById(arrowId);
+    let open = true;
+    hdr.addEventListener('click', () => {
+      open = !open;
+      if (open) {
+        gsap.to(body, { height: 'auto', duration: 0.3, ease: 'power2.out',
+          onStart: () => { body.style.overflow = 'visible'; } });
+        arrow.classList.add('open');
+      } else {
+        gsap.to(body, { height: 0, duration: 0.25, ease: 'power2.in',
+          onStart: () => { body.style.overflow = 'hidden'; } });
+        arrow.classList.remove('open');
+      }
+    });
+  });
+}
+
+// ─────────────────────────────────────────────
+// TEXT INPUT
+// ─────────────────────────────────────────────
+function initTextInput() {
+  const textarea  = document.getElementById('text-input');
+  const counter   = document.getElementById('txt-counter');
+  const hints     = document.getElementById('keyword-hints');
+  const chip      = document.getElementById('chip-text');
+  const analyzeBtn = document.getElementById('analyze-text-btn');
+
+  textarea.addEventListener('input', () => {
+    counter.textContent = `${textarea.value.length} / 500`;
+    const kw = detectKeywords(textarea.value);
+    hints.textContent = 'DETECTED SIGNALS:  ' + kw;
+  });
+
+  function runTextAnalysis() {
+    const text = textarea.value.trim();
+    analyzeBtn.textContent = 'ANALYZING...';
+    gsap.to(analyzeBtn, { scale: 0.97, duration: 0.1, yoyo: true, repeat: 1,
+      onComplete: () => { analyzeBtn.style.background = 'var(--gold)';
+        setTimeout(() => { analyzeBtn.style.background = 'var(--amber)'; }, 300); }
+    });
+    setTimeout(() => {
+      state.lastText = predictText(text || '');
+      chip.textContent = 'ANALYZED'; chip.className = 'sub-chip chip-ok';
+      runFusion('TEXT');
+      analyzeBtn.textContent = 'ANALYZE TEXT';
+    }, 200);
+  }
+
+  analyzeBtn.addEventListener('click', runTextAnalysis);
+
+  textarea.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); runTextAnalysis(); }
+  });
+}
+
+// ─────────────────────────────────────────────
+// SLIDERS / WEIGHTS
+// ─────────────────────────────────────────────
+function initSliders() {
+  [['slider-text','val-text','text'],
+   ['slider-face','val-face','face'],
+   ['slider-audio','val-audio','audio']].forEach(([sliderId, valId, key]) => {
+    const slider = document.getElementById(sliderId);
+    const display = document.getElementById(valId);
+    slider.addEventListener('input', () => {
+      const v = parseFloat(slider.value);
+      state.weights[key] = v;
+      display.textContent = v.toFixed(2);
+      updateFusionWeightBars();
+    });
+  });
+}
+
+// ─────────────────────────────────────────────
+// WEBCAM
+// ─────────────────────────────────────────────
+function initCamera() {
+  const toggleBtn  = document.getElementById('cam-toggle-btn');
+  const snapBtn    = document.getElementById('cam-snap-btn');
+  const video      = document.getElementById('cam-video');
+  const placeholder= document.getElementById('cam-placeholder');
+  const bbox       = document.getElementById('cam-bbox');
+  const chip       = document.getElementById('chip-cam');
+  let stream       = null;
+  let bboxInterval = null;
+  let chipInterval = null;
+
+  function startBboxDrift() {
+    if (bboxInterval) clearInterval(bboxInterval);
+    bboxInterval = setInterval(() => {
+      const dx = (Math.random() - 0.5) * 8;
+      const dy = (Math.random() - 0.5) * 8;
+      gsap.to(bbox, { x: dx, y: dy, duration: 0.6, ease: 'power1.inOut' });
+    }, 1500);
+  }
+
+  function startChipCycle() {
+    if (chipInterval) clearInterval(chipInterval);
+    chipInterval = setInterval(() => {
+      if (!state.cameraActive) return;
+      const r = Math.random();
+      if (r > 0.6) { chip.textContent = 'FACE DETECTED'; chip.className = 'sub-chip chip-ok'; }
+      else if (r > 0.3) { chip.textContent = 'NO FACE'; chip.className = 'sub-chip chip-warn'; }
+    }, 2000);
+  }
+
+  toggleBtn.addEventListener('click', async () => {
+    if (!state.cameraActive) {
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({ video: true });
+        video.srcObject = stream;
+        video.style.display = 'block';
+        placeholder.style.display = 'none';
+        gsap.from(video, { opacity: 0, duration: 0.5 });
+        bbox.style.display = 'block';
+        gsap.from(bbox, { y: -10, opacity: 0, duration: 0.4 });
+        toggleBtn.textContent = 'STOP CAMERA';
+        snapBtn.classList.remove('disabled');
+        state.cameraActive = true;
+        chip.textContent = 'FACE DETECTED'; chip.className = 'sub-chip chip-ok';
+        startBboxDrift();
+        startChipCycle();
+        startCameraLoop();
+      } catch(e) {
+        chip.textContent = 'BLOCKED'; chip.className = 'sub-chip chip-err';
+      }
+    } else {
+      if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
+      video.srcObject = null; video.style.display = 'none';
+      placeholder.style.display = 'flex';
+      bbox.style.display = 'none';
+      toggleBtn.textContent = 'START CAMERA';
+      snapBtn.classList.add('disabled');
+      state.cameraActive = false;
+      chip.textContent = 'NO FEED'; chip.className = 'sub-chip chip-err';
+      if (bboxInterval) clearInterval(bboxInterval);
+      if (chipInterval) clearInterval(chipInterval);
+      stopCameraLoop();
+    }
+  });
+
+  snapBtn.addEventListener('click', () => {
+    if (!state.cameraActive) return;
+    state.lastFace = predictFace();
+    runFusion('FACE');
+  });
+}
+
+function startCameraLoop() {
+  if (state.cameraInterval) clearInterval(state.cameraInterval);
+  state.cameraInterval = setInterval(() => {
+    if (!state.cameraActive) return;
+    state.lastFace = predictFace();
+    runFusion('FACE');
+  }, 1200);
+}
+function stopCameraLoop() {
+  if (state.cameraInterval) clearInterval(state.cameraInterval);
+  state.cameraInterval = null;
+}
+
+// ─────────────────────────────────────────────
+// WAVEFORM CANVAS
+// ─────────────────────────────────────────────
+let waveAnimId = null;
+let isRecording = false;
+function initWaveform() {
+  const canvas = document.getElementById('waveform-canvas');
+  const ctx    = canvas.getContext('2d');
+  function resize() { canvas.width = canvas.offsetWidth; canvas.height = 64; }
+  resize();
+  window.addEventListener('resize', resize);
+
+  function drawIdle() {
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+    ctx.strokeStyle = 'rgba(232,160,48,0.2)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(0, canvas.height/2);
+    ctx.lineTo(canvas.width, canvas.height/2);
+    ctx.stroke();
+  }
+
+  let samples = new Array(30).fill(0);
+  function drawLive() {
+    samples = samples.map((_, i) => {
+      const amp = isRecording ? 5 + Math.random() * 22 : (samples[i] * 0.8);
+      return amp;
+    });
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+    ctx.strokeStyle = isRecording ? 'var(--amber)' : 'rgba(232,160,48,0.3)';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    const step = canvas.width / (samples.length - 1);
+    samples.forEach((amp, i) => {
+      const x = i * step;
+      const y = canvas.height/2 + (i % 2 === 0 ? amp : -amp);
+      i === 0 ? ctx.moveTo(x,y) : ctx.lineTo(x,y);
+    });
+    ctx.stroke();
+    waveAnimId = requestAnimationFrame(drawLive);
+  }
+
+  drawIdle();
+  window.startWave = function() { isRecording = true; if (!waveAnimId) drawLive(); };
+  window.stopWave  = function() {
+    isRecording = false;
+    setTimeout(() => {
+      cancelAnimationFrame(waveAnimId); waveAnimId = null; drawIdle();
+    }, 400);
+  };
+}
+
+// ─────────────────────────────────────────────
+// AUDIO RECORDING
+// ─────────────────────────────────────────────
+function initAudio() {
+  const recordBtn  = document.getElementById('record-btn');
+  const chip       = document.getElementById('chip-audio');
+  const uploadBtn  = document.getElementById('upload-audio-btn');
+  const fileInput  = document.getElementById('audio-file-input');
+  const fnDisplay  = document.getElementById('upload-filename');
+
+  let recorder = null;
+  let fakeTimer = null;
+
+  async function startRecording() {
+    isRecording = true;
+    window.startWave();
+    recordBtn.textContent = 'RECORDING — RELEASE TO ANALYZE';
+    recordBtn.classList.add('recording');
+    chip.textContent = 'RECORDING'; chip.className = 'sub-chip chip-record';
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      recorder = new MediaRecorder(stream);
+      recorder.start();
+    } catch(e) {
+      fakeTimer = setTimeout(() => {}, 100);
+    }
+  }
+
+  function stopRecording() {
+    window.stopWave();
+    if (recorder && recorder.state !== 'inactive') {
+      recorder.stop();
+      recorder.stream.getTracks().forEach(t => t.stop());
+    }
+    recorder = null;
+    chip.textContent = 'PROCESSING'; chip.className = 'sub-chip chip-warn';
+    recordBtn.textContent = 'PROCESSING...';
+    setTimeout(() => {
+      state.lastAudio = predictAudio(true);
+      state.audioHasInput = true;
+      chip.textContent = 'DONE'; chip.className = 'sub-chip chip-ok';
+      recordBtn.textContent = 'HOLD TO RECORD';
+      recordBtn.classList.remove('recording');
+      runFusion('AUDIO');
+    }, 500);
+  }
+
+  recordBtn.addEventListener('mousedown', startRecording);
+  recordBtn.addEventListener('touchstart', (e) => { e.preventDefault(); startRecording(); });
+  recordBtn.addEventListener('mouseup', stopRecording);
+  recordBtn.addEventListener('touchend', (e) => { e.preventDefault(); stopRecording(); });
+
+  uploadBtn.addEventListener('click', () => fileInput.click());
+  fileInput.addEventListener('change', () => {
+    if (!fileInput.files[0]) return;
+    fnDisplay.textContent = fileInput.files[0].name;
+    fnDisplay.style.display = 'block';
+    chip.textContent = 'PROCESSING'; chip.className = 'sub-chip chip-warn';
+    setTimeout(() => {
+      state.lastAudio = predictAudio(true);
+      state.audioHasInput = true;
+      chip.textContent = 'DONE'; chip.className = 'sub-chip chip-ok';
+      runFusion('AUDIO');
+    }, 600);
+  });
+}
+
+// ─────────────────────────────────────────────
+// FUSE BUTTON
+// ─────────────────────────────────────────────
+function initFuseBtn() {
+  document.getElementById('fuse-btn').addEventListener('click', () => {
+    runFusion('FUSED');
+  });
+}
+
+// ─────────────────────────────────────────────
+// RESET BUTTON
+// ─────────────────────────────────────────────
+document.getElementById('reset-btn').addEventListener('click', resetSession);
+
+// ─────────────────────────────────────────────
+// SESSION TIMER
+// ─────────────────────────────────────────────
+setInterval(() => {
+  const elapsed = Math.floor((Date.now() - state.sessionStart) / 1000);
+  const mm = String(Math.floor(elapsed / 60)).padStart(2,'0');
+  const ss = String(elapsed % 60).padStart(2,'0');
+  document.getElementById('session-timer').textContent = `session: ${mm}:${ss}`;
+}, 1000);
+
+// ─────────────────────────────────────────────
+// GRAIN CANVAS
+// ─────────────────────────────────────────────
+(function initGrain() {
+  const canvas = document.getElementById('grain');
+  const ctx    = canvas.getContext('2d');
+  function resize() { canvas.width = window.innerWidth; canvas.height = window.innerHeight; }
+  resize();
+  window.addEventListener('resize', resize);
+  function renderGrain() {
+    const img = ctx.createImageData(canvas.width, canvas.height);
+    for (let i = 0; i < img.data.length; i += 4) {
+      const v = Math.random() * 255;
+      img.data[i] = img.data[i+1] = img.data[i+2] = v;
+      img.data[i+3] = 255;
+    }
+    ctx.putImageData(img, 0, 0);
+    requestAnimationFrame(renderGrain);
+  }
+  renderGrain();
+})();
+
+// ─────────────────────────────────────────────
+// CUSTOM CURSOR
+// ─────────────────────────────────────────────
+(function initCursor() {
+  const dot      = document.getElementById('cursor-dot');
+  const follower = document.getElementById('cursor-follower');
+  const xTo = gsap.quickTo(follower, 'x', { duration: 0.12, ease: 'power2' });
+  const yTo = gsap.quickTo(follower, 'y', { duration: 0.12, ease: 'power2' });
+  window.addEventListener('mousemove', e => {
+    gsap.set(dot, { x: e.clientX, y: e.clientY });
+    xTo(e.clientX); yTo(e.clientY);
+  });
+  document.querySelectorAll('button, input, textarea, [role="button"]').forEach(el => {
+    el.addEventListener('mouseenter', () => gsap.to(follower, { scale: 2.2, opacity: 0.5, duration: 0.2 }));
+    el.addEventListener('mouseleave', () => gsap.to(follower, { scale: 1, opacity: 1, duration: 0.2 }));
+  });
+})();
+
+// ─────────────────────────────────────────────
+// KEYBOARD SHORTCUTS
+// ─────────────────────────────────────────────
+document.addEventListener('keydown', e => {
+  const active = document.activeElement;
+  const inTextarea = active && active.tagName === 'TEXTAREA';
+
+  if (e.key === 'Escape') { if (active) active.blur(); }
+
+  if (!inTextarea) {
+    if (e.key === 'r' || e.key === 'R') {
+      setTimeout(resetSession, 500);
+    }
+    if (e.key === ' ') {
+      e.preventDefault();
+      document.getElementById('cam-toggle-btn').click();
+    }
+  }
+});
+
+// ─────────────────────────────────────────────
+// BOOT
+// ─────────────────────────────────────────────
+initCharts();
+initConfBars();
+initModSplit();
+initCollapsibles();
+initTextInput();
+initSliders();
+initCamera();
+initWaveform();
+initAudio();
+initFuseBtn();
+updateFusionWeightBars();
+
+// Set initial neutral state
+updateDominantDisplay({ dominant: 'neutral', confidence: 1.0 });
+updateConfidenceBars({ joy:0,sadness:0,anger:0,fear:0,surprise:0,disgust:0,neutral:1 });
+</script>
+</body>
+</html>
