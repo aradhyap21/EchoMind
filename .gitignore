@@ -1,0 +1,58 @@
+# ── VIRTUAL ENVIRONMENTS ──────────────────────────────────────────────────────
+echomind-env/
+venv/
+.venv/
+env/
+ENV/
+.env/
+
+# ── PYTHON ────────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+*.pyd
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# ── ML TRAINING OUTPUTS ───────────────────────────────────────────────────────
+echomind-nlp-output/
+checkpoints/
+runs/
+logs/
+*.ckpt
+*.pt
+*.pth
+*.bin
+*.safetensors
+
+# ── HUGGINGFACE CACHE ─────────────────────────────────────────────────────────
+.cache/
+*.cache
+
+# ── JUPYTER ───────────────────────────────────────────────────────────────────
+.ipynb_checkpoints/
+*.ipynb
+
+# ── OS ────────────────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ── EDITORS ───────────────────────────────────────────────────────────────────
+.vscode/settings.json
+.idea/
+*.swp
+*.swo
+
+# ── ENV FILES (secrets) ───────────────────────────────────────────────────────
+.env
+*.env
+.env.local
+
+# ── MATPLOTLIB / SEABORN CACHE ────────────────────────────────────────────────
+.matplotlib/
