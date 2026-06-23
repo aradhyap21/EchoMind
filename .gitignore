@@ -21,6 +21,8 @@ build/
 
 # ── ML TRAINING OUTPUTS ───────────────────────────────────────────────────────
 echomind-nlp-output/
+echomind-audio-output/
+echomind-vision-output/
 checkpoints/
 runs/
 logs/
@@ -29,6 +31,14 @@ logs/
 *.pth
 *.bin
 *.safetensors
+*.pkl
+
+# ── DATASETS ──────────────────────────────────────────────────────────────────
+archive/
+ravdess-data/
+*.wav
+*.mp3
+*.mp4
 
 # ── HUGGINGFACE CACHE ─────────────────────────────────────────────────────────
 .cache/
