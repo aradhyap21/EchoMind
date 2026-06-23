@@ -27,19 +27,31 @@ for _d in _CANDIDATE_DIRS:
         MODEL_DIR = _d
         break
 
-if MODEL_DIR is None:
-    raise FileNotFoundError(
-        "Audio model not found. Expected emotion_cnn.pt in one of: "
-        + str(_CANDIDATE_DIRS)
-    )
-
-with open(f"{MODEL_DIR}/model_config.json")   as f: MODEL_CONFIG   = json.load(f)
-with open(f"{MODEL_DIR}/feature_config.json") as f: FEATURE_CONFIG = json.load(f)
-with open(f"{MODEL_DIR}/scaler.pkl", "rb")    as f: SCALER         = pickle.load(f)
-
-ID2LABEL          = {int(k): v for k, v in MODEL_CONFIG["id2label"].items()}
-ECHOMIND_EMOTIONS = list(ID2LABEL.values())
+# Configs loaded lazily on first use — avoids crash if model not found at import time
+MODEL_CONFIG   = None
+FEATURE_CONFIG = None
+SCALER         = None
+ID2LABEL          = None
+ECHOMIND_EMOTIONS = ["joy", "sadness", "anger", "fear", "surprise", "disgust", "neutral"]
 DEVICE            = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+
+def _load_configs():
+    global MODEL_CONFIG, FEATURE_CONFIG, SCALER, ID2LABEL, ECHOMIND_EMOTIONS
+    if MODEL_CONFIG is not None:
+        return True
+    if MODEL_DIR is None:
+        return False
+    try:
+        with open(f"{MODEL_DIR}/model_config.json")   as f: MODEL_CONFIG   = json.load(f)
+        with open(f"{MODEL_DIR}/feature_config.json") as f: FEATURE_CONFIG = json.load(f)
+        with open(f"{MODEL_DIR}/scaler.pkl", "rb")    as f: SCALER         = pickle.load(f)
+        ID2LABEL          = {int(k): v for k, v in MODEL_CONFIG["id2label"].items()}
+        ECHOMIND_EMOTIONS = list(ID2LABEL.values())
+        return True
+    except Exception as e:
+        print(f"Audio config load error: {e}")
+        return False
 
 
 class EmotionCNN(nn.Module):
@@ -73,6 +85,8 @@ _model = None
 
 def get_model():
     global _model
+    if not _load_configs():
+        return None
     if _model is None:
         _model = EmotionCNN(
             FEATURE_CONFIG["feature_dim"], MODEL_CONFIG["num_classes"]
@@ -87,14 +101,18 @@ def get_model():
 def predict_audio(audio_array, sample_rate: int = 22050) -> dict:
     """Same return shape as predict_text() and predict_face()."""
     t0 = time.time()
+    _load_configs()
+    emotions_keys = ECHOMIND_EMOTIONS
     neutral = {
-        "emotions":   {e: (1.0 if e == "neutral" else 0.0) for e in ECHOMIND_EMOTIONS},
+        "emotions":   {e: (1.0 if e == "neutral" else 0.0) for e in emotions_keys},
         "dominant":   "neutral",
         "confidence": 1.0,
         "latency_ms": 0.0,
         "has_audio":  False,
     }
     if audio_array is None or len(audio_array) == 0:
+        return neutral
+    if not _load_configs() or FEATURE_CONFIG is None:
         return neutral
     try:
         sr = FEATURE_CONFIG["sample_rate"]
@@ -133,8 +151,11 @@ def predict_audio(audio_array, sample_rate: int = 22050) -> dict:
         )
         scaled  = SCALER.transform(features.astype(np.float32).reshape(1, -1))
         tensor  = torch.tensor(scaled, dtype=torch.float32).to(DEVICE)
+        mdl = get_model()
+        if mdl is None:
+            return neutral
         with torch.no_grad():
-            probs = torch.softmax(get_model()(tensor), dim=1).cpu().numpy()[0]
+            probs = torch.softmax(mdl(tensor), dim=1).cpu().numpy()[0]
 
         emotions = {ID2LABEL[i]: round(float(probs[i]), 4) for i in range(len(ID2LABEL))}
         dominant = max(emotions, key=emotions.get)

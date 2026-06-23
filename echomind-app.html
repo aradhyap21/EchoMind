@@ -972,8 +972,13 @@ input[type=range]::-moz-range-thumb {
 <script src="https://cdn.jsdelivr.net/npm/@studio-freight/lenis@1.0.42/dist/lenis.min.js"></script>
 <script>
 // ─────────────────────────────────────────────
-// MOCK MODEL LAYER
+// API + MOCK MODEL LAYER
+// Real models served by server.py at localhost:8000
+// Falls back to mock if API is unreachable
 // ─────────────────────────────────────────────
+const API_BASE = 'http://localhost:8000';
+let _apiAvailable = null; // null=unknown, true=online, false=offline
+
 const EMOTIONS = ['joy','sadness','anger','fear','surprise','disgust','neutral'];
 const EMOTION_COLORS = {
   joy:'#E8A030', sadness:'#6B9FFF', anger:'#D94040',
@@ -988,6 +993,56 @@ const KEYWORD_MAP = {
   disgust:  ['gross','disgusting','awful','horrible','nasty','terrible','repulsive'],
 };
 
+// Check once if server is running
+function setApiStatus(online) {
+  _apiAvailable = online;
+  const statusText = document.querySelector('.hdr-status-text');
+  const statusDot = document.querySelector('.hdr-dot');
+  if (online) {
+    statusText.textContent = 'REAL MODELS';
+    statusDot.style.setProperty('--teal', '#00BFA0');
+  } else {
+    statusText.textContent = 'MOCK MODE';
+    statusDot.style.setProperty('--teal', 'var(--amber)');
+  }
+}
+
+async function checkApi() {
+  if (_apiAvailable !== null) return _apiAvailable;
+  try {
+    const r = await fetch(`${API_BASE}/api/health`, { signal: AbortSignal.timeout(2000) });
+    setApiStatus(r.ok);
+  } catch { setApiStatus(false); }
+  console.log(_apiAvailable ? '[EchoMind] Real models online.' : '[EchoMind] Using mock models (server.py not running).');
+  return _apiAvailable;
+}
+
+async function blobToBase64(blob) {
+  return new Promise(resolve => {
+    const reader = new FileReader();
+    reader.onloadend = () => resolve(reader.result.split(',')[1]);
+    reader.readAsDataURL(blob);
+  });
+}
+
+async function decodeAudioToFloat32(blob) {
+  const arrayBuffer = await blob.arrayBuffer();
+  const audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 22050 });
+  const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+  return audioBuffer.getChannelData(0);
+}
+
+async function captureWebcamBlob() {
+  const video = document.getElementById('cam-video');
+  if (!video || !video.videoWidth) return null;
+  const canvas = document.createElement('canvas');
+  canvas.width = video.videoWidth;
+  canvas.height = video.videoHeight;
+  canvas.getContext('2d').drawImage(video, 0, 0);
+  return new Promise(res => canvas.toBlob(res, 'image/jpeg', 0.9));
+}
+
+// ── Mock fallbacks ─────────────────────────────────────────────────────────
 function dirichlet(alphas) {
   const gamma = alphas.map(a => {
     let sum = 0;
@@ -998,7 +1053,7 @@ function dirichlet(alphas) {
   return gamma.map(v => v / total);
 }
 
-function predictText(text) {
+function _mockText(text) {
   const words = text.toLowerCase().split(/\s+/);
   const alphas = [2,1,1,1,1,1,3];
   EMOTIONS.forEach((emotion, i) => {
@@ -1008,36 +1063,73 @@ function predictText(text) {
     }
   });
   const probs = dirichlet(alphas);
-  const obj = {};
-  EMOTIONS.forEach((e, i) => obj[e] = probs[i]);
+  const obj = {}; EMOTIONS.forEach((e,i) => obj[e] = probs[i]);
   const dominant = EMOTIONS[probs.indexOf(Math.max(...probs))];
   return { emotions: obj, dominant, confidence: Math.max(...probs), latency_ms: 80 + Math.random() * 60 };
 }
 
-function predictFace() {
+function _mockFace() {
   const t = Date.now() / 1000;
   const base = EMOTIONS.map((_,i) => Math.abs(Math.sin(t * 0.3 + i * 1.1)));
   const total = base.reduce((a,b) => a + b, 0);
   const probs = base.map(v => v / total);
-  const obj = {};
-  EMOTIONS.forEach((e,i) => obj[e] = probs[i]);
+  const obj = {}; EMOTIONS.forEach((e,i) => obj[e] = probs[i]);
   const dominant = EMOTIONS[probs.indexOf(Math.max(...probs))];
   return { emotions: obj, dominant, confidence: Math.max(...probs), latency_ms: 20 + Math.random() * 25 };
 }
 
-function predictAudio(hasInput = false) {
-  if (!hasInput) {
-    return { emotions:{joy:0,sadness:0,anger:0,fear:0,surprise:0,disgust:0,neutral:1},
-             dominant:'neutral', confidence:1.0, latency_ms:0 };
-  }
+function _mockAudio(hasInput = false) {
+  if (!hasInput) return { emotions:{joy:0,sadness:0,anger:0,fear:0,surprise:0,disgust:0,neutral:1}, dominant:'neutral', confidence:1.0, latency_ms:0 };
   const probs = dirichlet([1.5,1,1,1,1,1,2]);
-  const obj = {};
-  EMOTIONS.forEach((e,i) => obj[e] = probs[i]);
+  const obj = {}; EMOTIONS.forEach((e,i) => obj[e] = probs[i]);
   const dominant = EMOTIONS[probs.indexOf(Math.max(...probs))];
   return { emotions: obj, dominant, confidence: Math.max(...probs), latency_ms: 60 + Math.random() * 60 };
 }
 
-function fusePredictions(textPred, facePred, audioPred, weights = [0.4,0.35,0.25]) {
+// ── Real API wrappers (async, fall back to mock) ───────────────────────────
+async function predictText(text) {
+  if (await checkApi()) {
+    try {
+      const r = await fetch(`${API_BASE}/api/predict/text`, {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ text })
+      });
+      if (r.ok) return await r.json();
+    } catch(e) { setApiStatus(false); }
+  }
+  return _mockText(text);
+}
+
+async function predictFace(imageBlob) {
+  if (imageBlob && await checkApi()) {
+    try {
+      const b64 = await blobToBase64(imageBlob);
+      const r = await fetch(`${API_BASE}/api/predict/face`, {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ image_b64: b64 })
+      });
+      if (r.ok) return await r.json();
+    } catch(e) { setApiStatus(false); }
+  }
+  return _mockFace();
+}
+
+async function predictAudio(audioArray) {
+  const hasInput = audioArray && audioArray.length > 0;
+  if (hasInput && await checkApi()) {
+    try {
+      const b64 = await blobToBase64(new Blob([audioArray.buffer]));
+      const r = await fetch(`${API_BASE}/api/predict/audio`, {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ audio_b64: b64, sample_rate: 22050 })
+      });
+      if (r.ok) return await r.json();
+    } catch(e) { setApiStatus(false); }
+  }
+  return _mockAudio(hasInput);
+}
+
+async function fusePredictions(textPred, facePred, audioPred, weights = [0.4,0.35,0.25]) {
   const total = weights.reduce((a,b) => a + b, 0);
   const w = weights.map(v => v / total);
   const fused = {};
@@ -1058,6 +1150,9 @@ function detectKeywords(text) {
   return found.length > 0 ? found.join(' / ') : '--';
 }
 
+// Check API on load
+checkApi();
+
 // ─────────────────────────────────────────────
 // STATE
 // ─────────────────────────────────────────────
@@ -1075,12 +1170,12 @@ const state = {
   weights: { text: 0.40, face: 0.35, audio: 0.25 }
 };
 
-function runFusion(source = 'FUSED') {
-  const textPred  = state.lastText  || predictText('');
-  const facePred  = state.lastFace  || predictFace();
-  const audioPred = state.lastAudio || predictAudio(false);
+async function runFusion(source = 'FUSED') {
+  const textPred  = state.lastText  || await predictText('');
+  const facePred  = state.lastFace  || await predictFace(null);
+  const audioPred = state.lastAudio || await predictAudio(null);
   const weights = [state.weights.text, state.weights.face, state.weights.audio];
-  const fused = fusePredictions(textPred, facePred, audioPred, weights);
+  const fused = await fusePredictions(textPred, facePred, audioPred, weights);
   state.lastFused = fused;
   state.analysisCount++;
 
@@ -1413,19 +1508,17 @@ function initTextInput() {
     hints.textContent = 'DETECTED SIGNALS:  ' + kw;
   });
 
-  function runTextAnalysis() {
+  async function runTextAnalysis() {
     const text = textarea.value.trim();
     analyzeBtn.textContent = 'ANALYZING...';
     gsap.to(analyzeBtn, { scale: 0.97, duration: 0.1, yoyo: true, repeat: 1,
       onComplete: () => { analyzeBtn.style.background = 'var(--gold)';
         setTimeout(() => { analyzeBtn.style.background = 'var(--amber)'; }, 300); }
     });
-    setTimeout(() => {
-      state.lastText = predictText(text || '');
-      chip.textContent = 'ANALYZED'; chip.className = 'sub-chip chip-ok';
-      runFusion('TEXT');
-      analyzeBtn.textContent = 'ANALYZE TEXT';
-    }, 200);
+    state.lastText = await predictText(text || '');
+    chip.textContent = 'ANALYZED'; chip.className = 'sub-chip chip-ok';
+    await runFusion('TEXT');
+    analyzeBtn.textContent = 'ANALYZE TEXT';
   }
 
   analyzeBtn.addEventListener('click', runTextAnalysis);
@@ -1521,18 +1614,20 @@ function initCamera() {
     }
   });
 
-  snapBtn.addEventListener('click', () => {
+  snapBtn.addEventListener('click', async () => {
     if (!state.cameraActive) return;
-    state.lastFace = predictFace();
+    const blob = await captureWebcamBlob();
+    state.lastFace = await predictFace(blob);
     runFusion('FACE');
   });
 }
 
 function startCameraLoop() {
   if (state.cameraInterval) clearInterval(state.cameraInterval);
-  state.cameraInterval = setInterval(() => {
+  state.cameraInterval = setInterval(async () => {
     if (!state.cameraActive) return;
-    state.lastFace = predictFace();
+    const blob = await captureWebcamBlob();
+    state.lastFace = await predictFace(blob);
     runFusion('FACE');
   }, 1200);
 }
@@ -1615,6 +1710,26 @@ function initAudio() {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       recorder = new MediaRecorder(stream);
+      let audioChunks = [];
+      recorder.ondataavailable = e => audioChunks.push(e.data);
+      recorder.onstop = async () => {
+        chip.textContent = 'PROCESSING'; chip.className = 'sub-chip chip-warn';
+        recordBtn.textContent = 'PROCESSING...';
+        const blob = new Blob(audioChunks, { type: recorder.mimeType });
+        try {
+          const float32Array = await decodeAudioToFloat32(blob);
+          state.lastAudio = await predictAudio(float32Array);
+          state.audioHasInput = true;
+          chip.textContent = 'DONE'; chip.className = 'sub-chip chip-ok';
+          recordBtn.textContent = 'HOLD TO RECORD';
+          recordBtn.classList.remove('recording');
+          runFusion('AUDIO');
+        } catch(e) {
+          chip.textContent = 'ERROR'; chip.className = 'sub-chip chip-err';
+          recordBtn.textContent = 'HOLD TO RECORD';
+          recordBtn.classList.remove('recording');
+        }
+      };
       recorder.start();
     } catch(e) {
       fakeTimer = setTimeout(() => {}, 100);
@@ -1626,18 +1741,19 @@ function initAudio() {
     if (recorder && recorder.state !== 'inactive') {
       recorder.stop();
       recorder.stream.getTracks().forEach(t => t.stop());
+    } else if (!recorder) {
+      chip.textContent = 'PROCESSING'; chip.className = 'sub-chip chip-warn';
+      recordBtn.textContent = 'PROCESSING...';
+      setTimeout(async () => {
+        state.lastAudio = await predictAudio(new Float32Array(10));
+        state.audioHasInput = true;
+        chip.textContent = 'DONE'; chip.className = 'sub-chip chip-ok';
+        recordBtn.textContent = 'HOLD TO RECORD';
+        recordBtn.classList.remove('recording');
+        runFusion('AUDIO');
+      }, 500);
     }
     recorder = null;
-    chip.textContent = 'PROCESSING'; chip.className = 'sub-chip chip-warn';
-    recordBtn.textContent = 'PROCESSING...';
-    setTimeout(() => {
-      state.lastAudio = predictAudio(true);
-      state.audioHasInput = true;
-      chip.textContent = 'DONE'; chip.className = 'sub-chip chip-ok';
-      recordBtn.textContent = 'HOLD TO RECORD';
-      recordBtn.classList.remove('recording');
-      runFusion('AUDIO');
-    }, 500);
   }
 
   recordBtn.addEventListener('mousedown', startRecording);
@@ -1646,17 +1762,20 @@ function initAudio() {
   recordBtn.addEventListener('touchend', (e) => { e.preventDefault(); stopRecording(); });
 
   uploadBtn.addEventListener('click', () => fileInput.click());
-  fileInput.addEventListener('change', () => {
+  fileInput.addEventListener('change', async () => {
     if (!fileInput.files[0]) return;
     fnDisplay.textContent = fileInput.files[0].name;
     fnDisplay.style.display = 'block';
     chip.textContent = 'PROCESSING'; chip.className = 'sub-chip chip-warn';
-    setTimeout(() => {
-      state.lastAudio = predictAudio(true);
+    try {
+      const float32Array = await decodeAudioToFloat32(fileInput.files[0]);
+      state.lastAudio = await predictAudio(float32Array);
       state.audioHasInput = true;
       chip.textContent = 'DONE'; chip.className = 'sub-chip chip-ok';
       runFusion('AUDIO');
-    }, 600);
+    } catch(e) {
+      chip.textContent = 'ERROR'; chip.className = 'sub-chip chip-err';
+    }
   });
 }
 
