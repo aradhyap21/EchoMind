@@ -25,6 +25,7 @@ print(f"\n{'='*60}\n SECTION 1 -- IMPORTS AND MODE SELECTION\n{'='*60}\n")
 import os
 import time
 import json
+import threading
 import numpy as np
 from pathlib import Path
 from datetime import datetime
@@ -32,7 +33,7 @@ from datetime import datetime
 # MODE controls what the script does when run.
 # "test" -> single webcam snapshot + print results + save PNG + exit
 # "live" -> real-time webcam window with overlay until Q is pressed
-MODE = "test"   # change to "live" for real-time mode
+MODE = "live"   # change to "live" for real-time mode
 
 OUTPUT_DIR = "./echomind-vision-output"
 Path(OUTPUT_DIR).mkdir(parents=True, exist_ok=True)
@@ -99,7 +100,7 @@ EMOTION_COLORS_BGR = {
 # "opencv"      -- fastest (~30ms),  least accurate
 # "ssd"         -- balanced (~80ms), good for real-time  <- default
 # "retinaface"  -- most accurate (~200ms), use for snapshots
-DETECTOR_BACKEND = "ssd"
+DETECTOR_BACKEND = "opencv"
 EMOTION_MODEL    = "Emotion"
 
 print(f"Detector backend: {DETECTOR_BACKEND}")
@@ -456,6 +457,7 @@ print(f"\n{'='*60}\n SECTION 6 -- LIVE MODE\n{'='*60}\n")
 def run_live_mode():
     """
     Opens a real-time webcam window with emotion overlay.
+    DeepFace runs in a background thread -- video display never blocks.
     Runs until user presses Q.
 
     Controls:
@@ -463,9 +465,8 @@ def run_live_mode():
         S -- save current annotated frame to sample_output.png
         P -- print current prediction to terminal
     """
-    print("Starting live webcam mode...")
+    print("Starting live webcam mode (threaded)...")
     print("Controls: Q = quit  |  S = save frame  |  P = print prediction")
-    print("Tip: first frame is slow -- DeepFace loading model weights.")
 
     cap = cv2.VideoCapture(0)
     if not cap.isOpened():
@@ -480,77 +481,119 @@ def run_live_mode():
     actual_h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
     print(f"Camera resolution: {actual_w}x{actual_h}")
 
-    # PRED_INTERVAL controls how often DeepFace runs.
-    # 0.4s = runs ~2.5 times per second.
-    # Video still renders every frame for smooth display.
-    # Reduce to 0.2 for faster updates, increase to 0.8 for smoother video.
-    PRED_INTERVAL = 0.4
-
-    last_pred_time = 0.0
-    fps_counter    = 0
-    fps_start      = time.time()
-    current_fps    = 0.0
-    frame_count    = 0
-
-    # Default neutral result before first DeepFace call.
-    last_result = {
+    # ── Shared state between main thread and prediction thread ────────────────
+    # Using a list of length 1 so the thread can mutate the value in place.
+    # A threading.Lock protects reads and writes from race conditions.
+    prediction_lock    = threading.Lock()
+    latest_result      = [{
         "emotions":      {e: (1.0 if e == "neutral" else 0.0) for e in ECHOMIND_EMOTIONS},
         "dominant":      "neutral",
         "confidence":    1.0,
         "latency_ms":    0.0,
         "face_detected": False,
         "face_region":   None,
-    }
+    }]
+    prediction_running = [False]  # flag: is a prediction thread currently active?
 
-    print("Window opened. Press Q to quit.")
+    # ── Prediction thread function ─────────────────────────────────────────────
+    def run_prediction(frame_copy):
+        """
+        Runs in a daemon thread. Calls predict_face() on a copy of the frame.
+        Writes result to latest_result[0] under lock when done.
+        Sets prediction_running[0] = False so the next prediction can start.
+        """
+        try:
+            result = predict_face(frame_copy, enforce_detection=False)
+        except Exception as e:
+            print(f"Prediction error: {e}")
+            result = latest_result[0]  # keep last known result on error
+
+        with prediction_lock:
+            latest_result[0] = result
+        prediction_running[0] = False  # signal: thread done, next can start
+
+    # ── FPS tracking ──────────────────────────────────────────────────────────
+    # PRED_INTERVAL: how often a new prediction thread is spawned.
+    # 0.8s = ~1.2 predictions per second. Video still runs at full camera FPS.
+    PRED_INTERVAL   = 0.8
+    fps_counter     = 0
+    fps_timer_start = time.time()
+    current_fps     = 0.0
+    frame_count     = 0
+    last_pred_time  = 0.0
+
+    print("Window open. Warming up...")
 
     while True:
         ret, frame = cap.read()
         if not ret or frame is None:
-            print("Frame capture failed. Retrying...")
-            time.sleep(0.1)
+            time.sleep(0.01)
             continue
 
         now = time.time()
 
-        # Run prediction every PRED_INTERVAL seconds.
-        if now - last_pred_time >= PRED_INTERVAL:
-            last_result    = predict_face(frame, enforce_detection=False)
-            last_pred_time = now
+        # Spawn prediction thread if interval has passed and no thread running.
+        # prediction_running[0] is only set True here on the main thread and
+        # set False by the worker thread -- safe to read without a lock.
+        if (now - last_pred_time >= PRED_INTERVAL) and not prediction_running[0]:
+            prediction_running[0] = True
+            last_pred_time        = now
+            frame_copy            = frame.copy()  # give thread its own frame
+            t = threading.Thread(
+                target=run_prediction,
+                args=(frame_copy,),
+                daemon=True,  # dies automatically when main thread exits
+            )
+            t.start()
 
-        # Annotate and display every frame.
-        annotated = annotate_frame(frame, last_result, fps=current_fps)
-        cv2.imshow("EchoMind -- Vision  |  Q: quit  S: save  P: print", annotated)
+        # Read latest result under lock.
+        with prediction_lock:
+            current_result = latest_result[0].copy()
 
-        # FPS calculation.
+        # Annotate and display -- runs every frame, never blocks on DeepFace.
+        annotated = annotate_frame(frame, current_result, fps=current_fps)
+        cv2.imshow(
+            "EchoMind -- Vision Pipeline  |  Q: quit  S: save  P: print",
+            annotated,
+        )
+
+        # FPS counter.
         fps_counter += 1
         frame_count += 1
-        if now - fps_start >= 1.0:
-            current_fps = fps_counter / (now - fps_start)
-            fps_counter = 0
-            fps_start   = now
+        elapsed = now - fps_timer_start
+        if elapsed >= 1.0:
+            current_fps     = fps_counter / elapsed
+            fps_counter     = 0
+            fps_timer_start = now
 
         # Keyboard controls.
         key = cv2.waitKey(1) & 0xFF
 
-        if key in (ord("q"), ord("Q")):
+        if key == ord("q") or key == ord("Q"):
             print("Quit.")
             break
-        elif key in (ord("s"), ord("S")):
+        elif key == ord("s") or key == ord("S"):
             out_path = f"{OUTPUT_DIR}/sample_output.png"
             cv2.imwrite(out_path, annotated)
             print(f"Saved: {out_path}")
-        elif key in (ord("p"), ord("P")):
+        elif key == ord("p") or key == ord("P"):
             print(f"\nCurrent prediction:")
-            print(f"  Dominant:   {last_result['dominant'].upper()}")
-            print(f"  Confidence: {last_result['confidence']:.1%}")
-            print(f"  Latency:    {last_result['latency_ms']:.0f}ms")
-            for e, p in sorted(last_result["emotions"].items(), key=lambda x: x[1], reverse=True):
-                print(f"  {e:<12}  {p:.3f}")
+            print(f"  Dominant:    {current_result['dominant'].upper()}")
+            print(f"  Confidence:  {current_result['confidence']:.1%}")
+            print(f"  Latency:     {current_result['latency_ms']:.0f}ms")
+            print(f"  FPS:         {current_fps:.1f}")
+            sorted_e = sorted(
+                current_result["emotions"].items(), key=lambda x: x[1], reverse=True
+            )
+            for e, p in sorted_e:
+                bar = chr(9608) * int(p * 25)
+                print(f"  {e:<12}  {p:.3f}  {bar}")
 
     cap.release()
     cv2.destroyAllWindows()
-    print(f"\nSession ended. Total frames: {frame_count}")
+    print(f"\nSession ended.")
+    print(f"Total frames displayed: {frame_count}")
+    print(f"Average FPS:            {frame_count / (time.time() - fps_timer_start + 0.001):.1f}")
 
 print(f"\n{'='*60}\n SECTION 7 -- WRITE predict_face.py\n{'='*60}\n")
 
