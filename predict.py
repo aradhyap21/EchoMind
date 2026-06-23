@@ -21,7 +21,7 @@ def get_pipeline():
             top_k=None,
             truncation=True,
             max_length=256,
-            device=0,  # GPU. Use device=-1 for CPU only.
+            device=-1,  # Use device=-1 for CPU only.
         )
     return _pipe
 

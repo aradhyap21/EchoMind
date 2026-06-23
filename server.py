@@ -10,6 +10,9 @@ Opens at: http://localhost:8000
 """
 
 import io
+import os
+os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
+os.environ["TF_ENABLE_ONEDNN_OPTS"] = "0"
 import base64
 import numpy as np
 import uvicorn
