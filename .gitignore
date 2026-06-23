@@ -27,7 +27,7 @@ checkpoints/
 runs/
 logs/
 *.ckpt
-*.pt
+# *.pt excluded from ignore so audio_model/ weights can be committed
 *.pth
 *.bin
 *.safetensors

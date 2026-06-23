@@ -1,0 +1,10 @@
+{
+  "sample_rate": 22050,
+  "duration": 3.0,
+  "n_mfcc": 40,
+  "n_chroma": 12,
+  "n_mels": 128,
+  "hop_length": 512,
+  "n_fft": 2048,
+  "feature_dim": 180
+}

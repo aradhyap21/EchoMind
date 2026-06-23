@@ -1,0 +1,22 @@
+{
+  "input_dim": 180,
+  "num_classes": 7,
+  "id2label": {
+    "0": "joy",
+    "1": "sadness",
+    "2": "anger",
+    "3": "fear",
+    "4": "surprise",
+    "5": "disgust",
+    "6": "neutral"
+  },
+  "label2id": {
+    "joy": 0,
+    "sadness": 1,
+    "anger": 2,
+    "fear": 3,
+    "surprise": 4,
+    "disgust": 5,
+    "neutral": 6
+  }
+}

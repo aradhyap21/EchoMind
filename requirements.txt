@@ -1,0 +1,12 @@
+gradio==4.44.0
+transformers==4.44.0
+torch==2.5.1
+torchaudio==2.5.1
+librosa==0.10.2
+soundfile==0.12.1
+deepface==0.0.93
+tf-keras
+opencv-python-headless==4.10.0.86
+numpy
+scikit-learn==1.5.1
+huggingface_hub==0.24.5
