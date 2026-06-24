@@ -373,14 +373,12 @@ input[type=range]::-moz-range-thumb {
   transform: scaleX(-1);
   display: none;
 }
-#cam-bbox {
+#cam-overlay {
   position: absolute;
-  width: 60%; height: 70%;
-  top: 50%; left: 50%;
-  transform: translate(-50%,-50%);
-  border: 1px dashed var(--amber-line);
-  display: none;
+  inset: 0;
+  width: 100%; height: 100%;
   pointer-events: none;
+  display: none;
 }
 
 /* Waveform */
@@ -768,7 +766,7 @@ input[type=range]::-moz-range-thumb {
     <span class="hdr-logo">ECHOMIND</span>
     <div class="hdr-status">
       <div class="hdr-dot"></div>
-      <span class="hdr-status-text">DEMO MODE ACTIVE</span>
+      <span class="hdr-status-text" id="hdr-status-label">CONNECTING...</span>
     </div>
     <div class="hdr-stats">
       <span>analyses run: <span class="hdr-stat-val" id="hdr-count">000</span></span>
@@ -820,7 +818,7 @@ input[type=range]::-moz-range-thumb {
               <span class="cam-label">CAMERA NOT ACTIVE</span>
             </div>
             <video id="cam-video" autoplay muted playsinline></video>
-            <div id="cam-bbox"></div>
+            <canvas id="cam-overlay"></canvas>
           </div>
           <div class="btn-pair">
             <button class="btn-outline btn-teal" id="cam-toggle-btn">START CAMERA</button>
@@ -892,7 +890,7 @@ input[type=range]::-moz-range-thumb {
       <!-- Radar -->
       <div id="radar-wrap">
         <canvas id="radar-canvas"></canvas>
-        <span class="radar-demo-tag">DEMO MODE</span>
+        <span class="radar-demo-tag" id="radar-mode-tag">CONNECTING...</span>
       </div>
 
       <!-- Fusion weights -->
@@ -996,24 +994,31 @@ const KEYWORD_MAP = {
 // Check once if server is running
 function setApiStatus(online) {
   _apiAvailable = online;
-  const statusText = document.querySelector('.hdr-status-text');
+  const statusText = document.getElementById('hdr-status-label');
   const statusDot = document.querySelector('.hdr-dot');
+  const radarTag = document.getElementById('radar-mode-tag');
   if (online) {
-    statusText.textContent = 'REAL MODELS';
-    statusDot.style.setProperty('--teal', '#00BFA0');
+    statusText.textContent = 'LIVE MODELS';
+    if (radarTag) radarTag.textContent = 'LIVE';
+    statusDot.style.background = '#00BFA0';
   } else {
     statusText.textContent = 'MOCK MODE';
-    statusDot.style.setProperty('--teal', 'var(--amber)');
+    if (radarTag) radarTag.textContent = 'MOCK MODE';
+    statusDot.style.background = 'var(--amber)';
   }
 }
 
 async function checkApi() {
   if (_apiAvailable !== null) return _apiAvailable;
-  try {
-    const r = await fetch(`${API_BASE}/api/health`, { signal: AbortSignal.timeout(2000) });
-    setApiStatus(r.ok);
-  } catch { setApiStatus(false); }
-  console.log(_apiAvailable ? '[EchoMind] Real models online.' : '[EchoMind] Using mock models (server.py not running).');
+  // Try both /api/health and /health for compatibility with app.py and server.py
+  for (const path of ['/api/health', '/health']) {
+    try {
+      const r = await fetch(`${API_BASE}${path}`, { signal: AbortSignal.timeout(2000) });
+      if (r.ok) { setApiStatus(true); break; }
+    } catch { /* try next */ }
+  }
+  if (_apiAvailable === null) setApiStatus(false);
+  console.log(_apiAvailable ? '[EchoMind] Real models online.' : '[EchoMind] Using mock models (backend not running).');
   return _apiAvailable;
 }
 
@@ -1114,29 +1119,63 @@ async function predictFace(imageBlob) {
   return _mockFace();
 }
 
-async function predictAudio(audioArray) {
-  const hasInput = audioArray && audioArray.length > 0;
+// predictAudio accepts either a raw Blob (from MediaRecorder) or a Float32Array
+async function predictAudio(audioInput) {
+  const isBlob = audioInput instanceof Blob;
+  const hasInput = isBlob ? audioInput.size > 0
+                           : (audioInput && audioInput.length > 0);
   if (hasInput && await checkApi()) {
     try {
-      const b64 = await blobToBase64(new Blob([audioArray.buffer]));
-      const r = await fetch(`${API_BASE}/api/predict/audio`, {
-        method: 'POST', headers: {'Content-Type':'application/json'},
-        body: JSON.stringify({ audio_b64: b64, sample_rate: 22050 })
-      });
-      if (r.ok) return await r.json();
+      if (isBlob) {
+        // Fast path: send raw audio blob via FormData (no base64 overhead)
+        const fd = new FormData();
+        fd.append('file', audioInput, 'audio.webm');
+        const r = await fetch(`${API_BASE}/api/predict/audio/blob`, {
+          method: 'POST', body: fd
+        });
+        if (r.ok) return await r.json();
+      } else {
+        // Legacy path: Float32Array → base64 JSON
+        const b64 = await blobToBase64(new Blob([audioInput.buffer]));
+        const r = await fetch(`${API_BASE}/api/predict/audio`, {
+          method: 'POST', headers: {'Content-Type':'application/json'},
+          body: JSON.stringify({ audio_b64: b64, sample_rate: 22050 })
+        });
+        if (r.ok) return await r.json();
+      }
     } catch(e) { setApiStatus(false); }
   }
   return _mockAudio(hasInput);
 }
 
-async function fusePredictions(textPred, facePred, audioPred, weights = [0.4,0.35,0.25]) {
-  const total = weights.reduce((a,b) => a + b, 0);
+// Apply temperature-scaled softmax to sharpen emotion distributions (reduces neutral bias)
+function sharpenEmotions(emotions, temperature = 0.45) {
+  const keys = Object.keys(emotions);
+  const logits = keys.map(k => emotions[k]);
+  // Scale by 1/T then softmax
+  const scaled = logits.map(v => v / temperature);
+  const maxS   = Math.max(...scaled);
+  const exps   = scaled.map(v => Math.exp(v - maxS));
+  const sumE   = exps.reduce((a, b) => a + b, 0);
+  const result = {};
+  keys.forEach((k, i) => result[k] = exps[i] / sumE);
+  return result;
+}
+
+async function fusePredictions(textPred, facePred, audioPred, weights = [0.4, 0.35, 0.25]) {
+  const total = weights.reduce((a, b) => a + b, 0) || 1;
   const w = weights.map(v => v / total);
+
+  // Sharpen each modality's emotion distribution before blending
+  const tE = sharpenEmotions(textPred.emotions);
+  const fE = sharpenEmotions(facePred.emotions);
+  const aE = sharpenEmotions(audioPred.emotions);
+
   const fused = {};
   EMOTIONS.forEach(e => {
-    fused[e] = textPred.emotions[e]*w[0] + facePred.emotions[e]*w[1] + audioPred.emotions[e]*w[2];
+    fused[e] = tE[e] * w[0] + fE[e] * w[1] + aE[e] * w[2];
   });
-  const values = EMOTIONS.map(e => fused[e]);
+  const values   = EMOTIONS.map(e => fused[e]);
   const dominant = EMOTIONS[values.indexOf(Math.max(...values))];
   return { emotions: fused, dominant, confidence: Math.max(...values) };
 }
@@ -1174,7 +1213,17 @@ async function runFusion(source = 'FUSED') {
   const textPred  = state.lastText  || await predictText('');
   const facePred  = state.lastFace  || await predictFace(null);
   const audioPred = state.lastAudio || await predictAudio(null);
-  const weights = [state.weights.text, state.weights.face, state.weights.audio];
+
+  // Dynamic weights: zero-out modalities that have never had real input,
+  // so camera-only mode doesn't get dragged toward neutral by empty-text prediction
+  const tw = state.weights.text;
+  const fw = state.weights.face;
+  const aw = state.weights.audio;
+  const effectiveTW = state.lastText  ? tw : 0;
+  const effectiveFW = fw;  // face is always active when camera is running
+  const effectiveAW = state.lastAudio ? aw : 0;
+  const weights = [effectiveTW, effectiveFW, effectiveAW];
+
   const fused = await fusePredictions(textPred, facePred, audioPred, weights);
   state.lastFused = fused;
   state.analysisCount++;
@@ -1550,33 +1599,83 @@ function initSliders() {
 // WEBCAM
 // ─────────────────────────────────────────────
 function initCamera() {
-  const toggleBtn  = document.getElementById('cam-toggle-btn');
-  const snapBtn    = document.getElementById('cam-snap-btn');
-  const video      = document.getElementById('cam-video');
-  const placeholder= document.getElementById('cam-placeholder');
-  const bbox       = document.getElementById('cam-bbox');
-  const chip       = document.getElementById('chip-cam');
-  let stream       = null;
-  let bboxInterval = null;
-  let chipInterval = null;
+  const toggleBtn   = document.getElementById('cam-toggle-btn');
+  const snapBtn     = document.getElementById('cam-snap-btn');
+  const video       = document.getElementById('cam-video');
+  const placeholder = document.getElementById('cam-placeholder');
+  const canvas      = document.getElementById('cam-overlay');
+  const ctx         = canvas.getContext('2d');
+  const chip        = document.getElementById('chip-cam');
+  let stream        = null;
 
-  function startBboxDrift() {
-    if (bboxInterval) clearInterval(bboxInterval);
-    bboxInterval = setInterval(() => {
-      const dx = (Math.random() - 0.5) * 8;
-      const dy = (Math.random() - 0.5) * 8;
-      gsap.to(bbox, { x: dx, y: dy, duration: 0.6, ease: 'power1.inOut' });
-    }, 1500);
-  }
+  // Draw real face bbox from API face_region data onto canvas overlay
+  function drawFaceBbox(result) {
+    // Sync canvas resolution to its display size
+    canvas.width  = canvas.offsetWidth;
+    canvas.height = canvas.offsetHeight;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-  function startChipCycle() {
-    if (chipInterval) clearInterval(chipInterval);
-    chipInterval = setInterval(() => {
-      if (!state.cameraActive) return;
-      const r = Math.random();
-      if (r > 0.6) { chip.textContent = 'FACE DETECTED'; chip.className = 'sub-chip chip-ok'; }
-      else if (r > 0.3) { chip.textContent = 'NO FACE'; chip.className = 'sub-chip chip-warn'; }
-    }, 2000);
+    if (!result || !result.face_detected || !result.face_region) {
+      chip.textContent = 'NO FACE'; chip.className = 'sub-chip chip-warn';
+      return;
+    }
+    chip.textContent = 'FACE DETECTED'; chip.className = 'sub-chip chip-ok';
+
+    const reg = result.face_region;
+    // face_region is in original (unmirrored) video coords.
+    // video is CSS-mirrored via scaleX(-1). We need to flip x.
+    // Assume video native size via videoWidth/videoHeight.
+    const vw = video.videoWidth  || canvas.width;
+    const vh = video.videoHeight || canvas.height;
+    const scaleX = canvas.width  / vw;
+    const scaleY = canvas.height / vh;
+
+    // Mirror x: flipped_x = vw - (x + w)
+    const bx = (vw - (reg.x + reg.w)) * scaleX;
+    const by = reg.y * scaleY;
+    const bw = reg.w * scaleX;
+    const bh = reg.h * scaleY;
+
+    const dominant  = (result.dominant || 'neutral').toUpperCase();
+    const colorMap  = { JOY:'#E8A030', SADNESS:'#6B9FFF', ANGER:'#D94040',
+                        FEAR:'#A855F7', SURPRISE:'#34D399', DISGUST:'#94A3B8', NEUTRAL:'#8A8278' };
+    const boxColor  = colorMap[dominant] || '#E8A030';
+    const confidence = result.confidence ? (result.confidence * 100).toFixed(0) + '%' : '';
+
+    // Bounding box
+    ctx.strokeStyle = boxColor;
+    ctx.lineWidth   = 1.5;
+    ctx.setLineDash([6, 3]);
+    ctx.strokeRect(bx, by, bw, bh);
+
+    // Corner accents
+    const cs = 10;
+    ctx.setLineDash([]);
+    ctx.lineWidth = 2.5;
+    [[bx,by],[bx+bw,by],[bx,by+bh],[bx+bw,by+bh]].forEach(([cx,cy],i) => {
+      const dx = i % 2 === 0 ? 1 : -1;
+      const dy = i < 2      ? 1 : -1;
+      ctx.beginPath();
+      ctx.moveTo(cx, cy + dy*cs); ctx.lineTo(cx, cy); ctx.lineTo(cx + dx*cs, cy);
+      ctx.stroke();
+    });
+
+    // Label pill above box
+    const label  = dominant + (confidence ? ' ' + confidence : '');
+    ctx.font     = 'bold 11px "Space Mono", monospace';
+    const tw     = ctx.measureText(label).width;
+    const px = 8, py = 4;
+    const lx = bx, ly = by - 26;
+    ctx.fillStyle   = boxColor;
+    ctx.globalAlpha = 0.15;
+    ctx.fillRect(lx, ly, tw + px*2, 20);
+    ctx.globalAlpha = 1;
+    ctx.strokeStyle = boxColor;
+    ctx.lineWidth   = 1;
+    ctx.setLineDash([]);
+    ctx.strokeRect(lx, ly, tw + px*2, 20);
+    ctx.fillStyle   = boxColor;
+    ctx.fillText(label, lx + px, ly + 14);
   }
 
   toggleBtn.addEventListener('click', async () => {
@@ -1587,15 +1686,12 @@ function initCamera() {
         video.style.display = 'block';
         placeholder.style.display = 'none';
         gsap.from(video, { opacity: 0, duration: 0.5 });
-        bbox.style.display = 'block';
-        gsap.from(bbox, { y: -10, opacity: 0, duration: 0.4 });
+        canvas.style.display = 'block';
         toggleBtn.textContent = 'STOP CAMERA';
         snapBtn.classList.remove('disabled');
         state.cameraActive = true;
-        chip.textContent = 'FACE DETECTED'; chip.className = 'sub-chip chip-ok';
-        startBboxDrift();
-        startChipCycle();
-        startCameraLoop();
+        chip.textContent = 'INITIALISING…'; chip.className = 'sub-chip chip-warn';
+        startCameraLoop(drawFaceBbox);
       } catch(e) {
         chip.textContent = 'BLOCKED'; chip.className = 'sub-chip chip-err';
       }
@@ -1603,13 +1699,12 @@ function initCamera() {
       if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
       video.srcObject = null; video.style.display = 'none';
       placeholder.style.display = 'flex';
-      bbox.style.display = 'none';
+      canvas.style.display = 'none';
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
       toggleBtn.textContent = 'START CAMERA';
       snapBtn.classList.add('disabled');
       state.cameraActive = false;
       chip.textContent = 'NO FEED'; chip.className = 'sub-chip chip-err';
-      if (bboxInterval) clearInterval(bboxInterval);
-      if (chipInterval) clearInterval(chipInterval);
       stopCameraLoop();
     }
   });
@@ -1618,16 +1713,19 @@ function initCamera() {
     if (!state.cameraActive) return;
     const blob = await captureWebcamBlob();
     state.lastFace = await predictFace(blob);
+    drawFaceBbox(state.lastFace);
     runFusion('FACE');
   });
 }
 
-function startCameraLoop() {
+function startCameraLoop(drawFaceBbox) {
   if (state.cameraInterval) clearInterval(state.cameraInterval);
   state.cameraInterval = setInterval(async () => {
     if (!state.cameraActive) return;
     const blob = await captureWebcamBlob();
-    state.lastFace = await predictFace(blob);
+    const result = await predictFace(blob);
+    state.lastFace = result;
+    if (drawFaceBbox) drawFaceBbox(result);
     runFusion('FACE');
   }, 1200);
 }
@@ -1698,27 +1796,54 @@ function initAudio() {
   const fileInput  = document.getElementById('audio-file-input');
   const fnDisplay  = document.getElementById('upload-filename');
 
-  let recorder = null;
-  let fakeTimer = null;
+  let recorder       = null;
+  let recTimerEl     = null;   // live recording timer display
+  let recTimerStart  = 0;
+  let recTimerRafId  = null;
+  let analyserNode   = null;
+  let audioCtxRec    = null;
+
+  // Create a small timer label next to the button (once)
+  recTimerEl = document.createElement('span');
+  recTimerEl.style.cssText = 'font-family:"Space Mono",monospace;font-size:11px;color:#E8A030;margin-left:10px;display:none;';
+  recordBtn.parentNode.insertBefore(recTimerEl, recordBtn.nextSibling);
+
+  function tickTimer() {
+    const secs = ((Date.now() - recTimerStart) / 1000).toFixed(1);
+    recTimerEl.textContent = `⏺ ${secs}s`;
+    recTimerRafId = requestAnimationFrame(tickTimer);
+  }
 
   async function startRecording() {
     isRecording = true;
     window.startWave();
-    recordBtn.textContent = 'RECORDING — RELEASE TO ANALYZE';
+    recordBtn.textContent = 'RELEASE TO ANALYZE';
     recordBtn.classList.add('recording');
     chip.textContent = 'RECORDING'; chip.className = 'sub-chip chip-record';
+    recTimerStart = Date.now();
+    recTimerEl.style.display = 'inline';
+    tickTimer();
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      // Real amplitude waveform via AnalyserNode
+      audioCtxRec  = new (window.AudioContext || window.webkitAudioContext)();
+      analyserNode = audioCtxRec.createAnalyser();
+      analyserNode.fftSize = 64;
+      audioCtxRec.createMediaStreamSource(stream).connect(analyserNode);
+      window._analyserNode = analyserNode;  // used by waveform canvas
+
       recorder = new MediaRecorder(stream);
       let audioChunks = [];
       recorder.ondataavailable = e => audioChunks.push(e.data);
       recorder.onstop = async () => {
+        cancelAnimationFrame(recTimerRafId);
+        recTimerEl.style.display = 'none';
         chip.textContent = 'PROCESSING'; chip.className = 'sub-chip chip-warn';
         recordBtn.textContent = 'PROCESSING...';
-        const blob = new Blob(audioChunks, { type: recorder.mimeType });
+        // Pass the raw Blob directly — server decodes it (much faster than base64)
+        const blob = new Blob(audioChunks, { type: recorder.mimeType || 'audio/webm' });
         try {
-          const float32Array = await decodeAudioToFloat32(blob);
-          state.lastAudio = await predictAudio(float32Array);
+          state.lastAudio = await predictAudio(blob);
           state.audioHasInput = true;
           chip.textContent = 'DONE'; chip.className = 'sub-chip chip-ok';
           recordBtn.textContent = 'HOLD TO RECORD';
@@ -1732,26 +1857,22 @@ function initAudio() {
       };
       recorder.start();
     } catch(e) {
-      fakeTimer = setTimeout(() => {}, 100);
+      cancelAnimationFrame(recTimerRafId);
+      recTimerEl.style.display = 'none';
+      chip.textContent = 'BLOCKED'; chip.className = 'sub-chip chip-err';
+      recordBtn.textContent = 'HOLD TO RECORD';
+      recordBtn.classList.remove('recording');
+      isRecording = false;
     }
   }
 
   function stopRecording() {
     window.stopWave();
+    isRecording = false;
     if (recorder && recorder.state !== 'inactive') {
       recorder.stop();
       recorder.stream.getTracks().forEach(t => t.stop());
-    } else if (!recorder) {
-      chip.textContent = 'PROCESSING'; chip.className = 'sub-chip chip-warn';
-      recordBtn.textContent = 'PROCESSING...';
-      setTimeout(async () => {
-        state.lastAudio = await predictAudio(new Float32Array(10));
-        state.audioHasInput = true;
-        chip.textContent = 'DONE'; chip.className = 'sub-chip chip-ok';
-        recordBtn.textContent = 'HOLD TO RECORD';
-        recordBtn.classList.remove('recording');
-        runFusion('AUDIO');
-      }, 500);
+      if (audioCtxRec) { audioCtxRec.close(); audioCtxRec = null; analyserNode = null; }
     }
     recorder = null;
   }
@@ -1768,8 +1889,8 @@ function initAudio() {
     fnDisplay.style.display = 'block';
     chip.textContent = 'PROCESSING'; chip.className = 'sub-chip chip-warn';
     try {
-      const float32Array = await decodeAudioToFloat32(fileInput.files[0]);
-      state.lastAudio = await predictAudio(float32Array);
+      // Send the file blob directly — fastest path
+      state.lastAudio = await predictAudio(fileInput.files[0]);
       state.audioHasInput = true;
       chip.textContent = 'DONE'; chip.className = 'sub-chip chip-ok';
       runFusion('AUDIO');

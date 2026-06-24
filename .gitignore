@@ -69,3 +69,7 @@ desktop.ini
 
 # ── MATPLOTLIB / SEABORN CACHE ────────────────────────────────────────────────
 .matplotlib/
+
+# ── LEGACY / UNUSED FILES ─────────────────────────────────────────────────────
+server.py
+echomind.html

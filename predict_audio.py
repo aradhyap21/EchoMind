@@ -169,3 +169,21 @@ def predict_audio(audio_array, sample_rate: int = 22050) -> dict:
     except Exception as e:
         print(f"Audio inference error: {e}")
         return neutral
+
+
+def warmup():
+    """Pre-warm LibROSA's internal graph so the first real request is fast.
+    Runs a dummy MFCC on a tiny signal in a background thread at import time."""
+    try:
+        dummy = np.zeros(int(22050 * 0.1), dtype=np.float32)  # 100ms silence
+        librosa.feature.mfcc(y=dummy, sr=22050, n_mfcc=40, hop_length=512, n_fft=2048)
+        librosa.feature.chroma_stft(y=dummy, sr=22050, n_chroma=12, hop_length=512, n_fft=2048)
+        librosa.feature.melspectrogram(y=dummy, sr=22050, n_mels=128, hop_length=512, n_fft=2048)
+        print("[EchoMind] LibROSA warmup complete.")
+    except Exception as e:
+        print(f"[EchoMind] LibROSA warmup failed (non-fatal): {e}")
+
+
+# Kick off warmup in background thread immediately at import time
+import threading as _threading
+_threading.Thread(target=warmup, daemon=True).start()

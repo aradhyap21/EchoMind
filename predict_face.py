@@ -10,7 +10,7 @@ import time
 import numpy as np
 from deepface import DeepFace
 
-DETECTOR_BACKEND = "ssd"
+DETECTOR_BACKEND = "opencv"
 
 DEEPFACE_TO_ECHOMIND = {
     "angry":    "anger",
@@ -60,9 +60,22 @@ def predict_face(frame: np.ndarray, enforce_detection: bool = False) -> dict:
         result      = results[0] if isinstance(results, list) else results
         raw_emotions = result.get("emotion", {})
         face_region  = result.get("region", None)
+
+        # Temperature sharpening: amplifies confident non-neutral signals
+        # T < 1.0 sharpens the distribution (reduces neutral bias from DeepFace)
+        TEMPERATURE = 0.5
+        import math
+        raw_vals = [raw_emotions.get(k, 0.0) / 100.0 for k in DEEPFACE_TO_ECHOMIND]
+        # softmax(x/T) with numerical stability
+        scaled  = [v / TEMPERATURE for v in raw_vals]
+        max_s   = max(scaled)
+        exps    = [math.exp(v - max_s) for v in scaled]
+        sum_e   = sum(exps)
+        sharpened = [e / sum_e for e in exps]
+
         mapped = {
-            em_key: float(raw_emotions.get(df_key, 0.0)) / 100.0
-            for df_key, em_key in DEEPFACE_TO_ECHOMIND.items()
+            em_key: float(sharpened[i])
+            for i, (df_key, em_key) in enumerate(DEEPFACE_TO_ECHOMIND.items())
         }
         for e in ECHOMIND_EMOTIONS:
             if e not in mapped:
