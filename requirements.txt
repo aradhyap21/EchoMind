@@ -10,3 +10,6 @@ opencv-python-headless==4.10.0.86
 numpy
 scikit-learn==1.5.1
 huggingface_hub==0.24.5
+fastapi
+uvicorn
+python-multipart
